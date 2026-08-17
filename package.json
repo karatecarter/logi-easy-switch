@@ -1,0 +1,17 @@
+{
+  "name": "logi-easy-switch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "inspect-asar": "node tools/inspect-asar.mjs",
+    "list": "node src/cli.mjs list",
+    "test": "node --test"
+  },
+  "bin": {
+    "logi-switch": "src/cli.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
