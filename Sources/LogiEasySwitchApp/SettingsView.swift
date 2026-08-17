@@ -51,6 +51,8 @@ struct SettingsView: View {
     @State private var mouseID = ""
     @State private var keyboardID = ""
     @State private var workingHotkeys: [String: Shortcut] = [:]
+    @State private var startAtLogin = false
+    @State private var loginItemMessage: String?
     @StateObject private var capture = ShortcutCaptureModel()
 
     private var mice: [LogiDevice] { devices.filter { $0.type == "MOUSE" } }
@@ -73,6 +75,26 @@ struct SettingsView: View {
             Picker("Default keyboard", selection: $keyboardID) {
                 Text("Choose a keyboard").tag("")
                 ForEach(keyboards) { device in Text(device.name).tag(device.id) }
+            }
+
+            Toggle("Start Logi Easy Switch at login", isOn: $startAtLogin)
+                .onChange(of: startAtLogin) { _, enabled in
+                    do {
+                        try LaunchAtLogin.setEnabled(enabled)
+                        startAtLogin = LaunchAtLogin.isRegistered
+                        loginItemMessage = LaunchAtLogin.requiresApproval
+                            ? "Approval required in System Settings → General → Login Items."
+                            : nil
+                    } catch {
+                        startAtLogin = LaunchAtLogin.isRegistered
+                        loginItemMessage = error.localizedDescription
+                    }
+                }
+
+            if let loginItemMessage {
+                Text(loginItemMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Text("Machine aliases")
@@ -119,6 +141,10 @@ struct SettingsView: View {
             mouseID = defaults.mouseID
             keyboardID = defaults.keyboardID
             workingHotkeys = defaults.hotkeys
+            startAtLogin = LaunchAtLogin.isRegistered
+            loginItemMessage = LaunchAtLogin.requiresApproval
+                ? "Approval required in System Settings → General → Login Items."
+                : nil
             capture.onCapture = { id, shortcut in
                 workingHotkeys[id] = shortcut
                 saveHotkeys()

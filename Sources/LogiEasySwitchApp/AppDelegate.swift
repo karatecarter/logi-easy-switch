@@ -247,6 +247,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         window.styleMask = [.titled, .closable]
         window.setContentSize(NSSize(width: 580, height: 620))
         window.isReleasedWhenClosed = false
+        if let closeButton = window.standardWindowButton(.closeButton) {
+            closeButton.keyEquivalent = "w"
+            closeButton.keyEquivalentModifierMask = .command
+        }
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
