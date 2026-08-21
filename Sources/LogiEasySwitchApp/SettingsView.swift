@@ -9,10 +9,16 @@ final class DeviceDefaults: ObservableObject {
 
     private let mouseKey = "defaultMouseID"
     private let keyboardKey = "defaultKeyboardID"
+    private let mouseNameKey = "defaultMouseName"
+    private let keyboardNameKey = "defaultKeyboardName"
+    private var mouseName: String
+    private var keyboardName: String
 
     init() {
         mouseID = UserDefaults.standard.string(forKey: mouseKey) ?? ""
         keyboardID = UserDefaults.standard.string(forKey: keyboardKey) ?? ""
+        mouseName = UserDefaults.standard.string(forKey: mouseNameKey) ?? ""
+        keyboardName = UserDefaults.standard.string(forKey: keyboardNameKey) ?? ""
         hotkeys = (try? JSONDecoder().decode([String: Shortcut].self, from: UserDefaults.standard.data(forKey: "hotkeys") ?? Data())) ?? [:]
         aliases = (try? JSONDecoder().decode([String: String].self, from: UserDefaults.standard.data(forKey: "machineAliases") ?? Data())) ?? [:]
     }
@@ -24,13 +30,38 @@ final class DeviceDefaults: ObservableObject {
     }
 
     func applyFallbacks(from devices: [LogiDevice]) {
-        if mouseID.isEmpty { mouseID = devices.first(where: { $0.name.localizedCaseInsensitiveContains("MX Master 3S") })?.id ?? "" }
-        if keyboardID.isEmpty { keyboardID = devices.first(where: { $0.name.localizedCaseInsensitiveContains("ERGO K860") })?.id ?? "" }
+        let mouse = devices.first { $0.id == mouseID && $0.type == "MOUSE" }
+            ?? devices.first { $0.type == "MOUSE" && namesMatch($0.name, mouseName) }
+            ?? devices.first { $0.name.localizedCaseInsensitiveContains("MX Master 3S") }
+        let keyboard = devices.first { $0.id == keyboardID && $0.type == "KEYBOARD" }
+            ?? devices.first { $0.type == "KEYBOARD" && namesMatch($0.name, keyboardName) }
+            ?? devices.first { $0.name.localizedCaseInsensitiveContains("ERGO K860") }
+
+        let previous = (mouseID, keyboardID, mouseName, keyboardName)
+        if let mouse {
+            mouseID = mouse.id
+            mouseName = mouse.name
+        }
+        if let keyboard {
+            keyboardID = keyboard.id
+            keyboardName = keyboard.name
+        }
+        if previous != (mouseID, keyboardID, mouseName, keyboardName) { save() }
+    }
+
+    func setSelectedDevices(mouseID: String, keyboardID: String, from devices: [LogiDevice]) {
+        self.mouseID = mouseID
+        self.keyboardID = keyboardID
+        mouseName = devices.first { $0.id == mouseID && $0.type == "MOUSE" }?.name ?? mouseName
+        keyboardName = devices.first { $0.id == keyboardID && $0.type == "KEYBOARD" }?.name ?? keyboardName
+        save()
     }
 
     func save() {
         UserDefaults.standard.set(mouseID, forKey: mouseKey)
         UserDefaults.standard.set(keyboardID, forKey: keyboardKey)
+        UserDefaults.standard.set(mouseName, forKey: mouseNameKey)
+        UserDefaults.standard.set(keyboardName, forKey: keyboardNameKey)
         UserDefaults.standard.set(try? JSONEncoder().encode(hotkeys), forKey: "hotkeys")
         UserDefaults.standard.set(try? JSONEncoder().encode(aliases), forKey: "machineAliases")
     }
@@ -38,6 +69,10 @@ final class DeviceDefaults: ObservableObject {
     func displayName(for machine: String) -> String {
         let alias = aliases[machine]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return alias.isEmpty ? machine : alias
+    }
+
+    private func namesMatch(_ left: String, _ right: String) -> Bool {
+        !right.isEmpty && left.compare(right, options: .caseInsensitive) == .orderedSame
     }
 }
 
@@ -156,9 +191,7 @@ struct SettingsView: View {
 
     private func saveSelectedDevices() {
         guard !mouseID.isEmpty, !keyboardID.isEmpty else { return }
-        defaults.mouseID = mouseID
-        defaults.keyboardID = keyboardID
-        defaults.save()
+        defaults.setSelectedDevices(mouseID: mouseID, keyboardID: keyboardID, from: devices)
         didSave()
     }
 
