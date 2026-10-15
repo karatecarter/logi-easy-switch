@@ -1,8 +1,8 @@
 # Logi Easy Switch
 
-Experimental macOS tooling for invoking the Easy-Switch action exposed by a
-locally installed Logi Options+ agent. It uses the agent's Unix-domain socket;
-it does not attempt to open Bluetooth HID devices directly.
+Experimental macOS tooling for controlling Logitech Easy-Switch devices. The
+native app talks HID++ directly to connected Bluetooth devices through macOS
+IOKit; it does not depend on Logi Options+ or its private local service.
 
 This project is unofficial and is not affiliated with Logitech. Options+
 updates may change or remove the private API.
@@ -10,7 +10,7 @@ updates may change or remove the private API.
 ## Requirements
 
 - macOS
-- Logi Options+ installed and running
+- Input Monitoring permission for the native app
 - Node.js 22 or newer for the prototype CLI
 - The destination computer must be awake
 
@@ -31,6 +31,11 @@ Hold Option while the menu is open to replace that list with a submenu for each
 available Logitech keyboard or mouse, allowing independent device switching.
 Settings saves the default mouse/keyboard and lets you record global hotkeys
 for every default-pair target and every paired device-specific target.
+
+The first launch may require enabling Logi Easy Switch in System Settings →
+Privacy & Security → Input Monitoring and then relaunching the app. Direct
+HID++ access currently discovers devices connected to this Mac over Bluetooth.
+The legacy Node CLI below still uses the older Options+ socket protocol.
 
 ## Commands
 
@@ -85,7 +90,7 @@ node src/cli.mjs switch 1 --device dev00000020 --yes
   a pairing with the requested computer name.
 - A device already connected to the destination is skipped.
 - The mouse switches before the keyboard.
-- Socket names and device IDs are discovered at runtime.
+- Device IDs and HID++ feature indexes are discovered at runtime.
 - `--device` can be repeated to select any Logitech input devices for one
   command. Without it, the saved defaults are used (ERGO K860 + MX Master 3S
   until you save another pair).

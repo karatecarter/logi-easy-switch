@@ -12,10 +12,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var settingsWindow: NSWindow?
     private var cachedDevices: [LogiDevice] = []
     private var cachedHosts: [String: [LogiHost]] = [:]
+    private var deviceLoadError: String?
     private let defaults = DeviceDefaults()
     private let hotkeys = HotkeyManager()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        HIDPPTransport.requestInputMonitoringAccessIfNeeded()
         statusItem.button?.image = Self.menuBarIcon()
         statusItem.button?.title = ""
         statusItem.button?.isHidden = false
@@ -30,8 +32,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         isMenuOpen = true
         optionMode = NSEvent.modifierFlags.contains(.option)
-        refreshSnapshotForOpenMenu()
         rebuildMenu()
+        loadDevices()
     }
 
     func menuDidClose(_ menu: NSMenu) {
@@ -53,21 +55,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         loadDevices()
     }
 
-    private func refreshSnapshotForOpenMenu() {
-        guard let devices = try? LogiAgent().devices() else { return }
-        cachedDevices = devices
-        defaults.applyFallbacks(from: devices)
-
-        let devicesToRefresh = optionMode
-            ? devices.filter(\.isAvailable)
-            : defaults.selectedDevices(from: devices)
-        for device in devicesToRefresh {
-            if let hosts = try? LogiAgent().hosts(for: device) {
-                cachedHosts[device.id] = hosts
-            }
-        }
-    }
-
     private func loadDevices() {
         Task.detached { [weak self] in
             guard let self else { return }
@@ -80,23 +67,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 await MainActor.run {
                     self.cachedDevices = devices
                     self.cachedHosts = hostsByDevice
+                    self.deviceLoadError = nil
                     self.defaults.applyFallbacks(from: devices)
                     if self.isMenuOpen {
+                        self.updateVisibleMenuState()
                         self.refreshPending = true
                     } else {
                         self.rebuildMenu()
                     }
                 }
             } catch {
-                await MainActor.run { self.showError(error) }
+                await MainActor.run {
+                    self.deviceLoadError = error.localizedDescription
+                    if self.isMenuOpen {
+                        self.refreshPending = true
+                    } else {
+                        self.rebuildMenu()
+                    }
+                }
             }
+        }
+    }
+
+    private func updateVisibleMenuState() {
+        if optionMode {
+            for deviceItem in menu.items {
+                guard let submenu = deviceItem.submenu,
+                      let device = cachedDevices.first(where: { $0.name == deviceItem.title }) else { continue }
+                for hostItem in submenu.items {
+                    guard let target = hostItem.representedObject as? DeviceTarget,
+                          let host = cachedHosts[device.id]?.first(where: { $0.index == target.host.index }) else { continue }
+                    hostItem.state = host.connected && device.connected ? .on : .off
+                }
+            }
+            return
+        }
+
+        let selected = defaults.selectedDevices(from: cachedDevices)
+        let targets = Dictionary(uniqueKeysWithValues: commonTargets(selected.map { cachedHosts[$0.id] ?? [] }).map { ($0.name, $0) })
+        for item in menu.items {
+            guard let name = item.representedObject as? String, let target = targets[name] else { continue }
+            item.state = target.isCurrent && selected.allSatisfy(\.connected) ? .on : .off
         }
     }
 
     private func rebuildMenu() {
         menu.removeAllItems()
         let selected = defaults.selectedDevices(from: cachedDevices)
-        if cachedDevices.isEmpty {
+        if let deviceLoadError, cachedDevices.isEmpty {
+            let errorItem = menu.addItem(withTitle: deviceLoadError, action: nil, keyEquivalent: "")
+            errorItem.isEnabled = false
+        } else if cachedDevices.isEmpty {
             menu.addItem(withTitle: "Open menu to load devices", action: nil, keyEquivalent: "")
         } else if optionMode {
             buildPerDeviceMenu(cachedDevices.filter(\.isAvailable))
@@ -112,7 +133,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let refresh = NSMenuItem(title: "Refresh", action: #selector(refreshMenuFromAction), keyEquivalent: "")
         refresh.target = self
         menu.addItem(refresh)
-        menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit Logi Easy Switch", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
         menu.addItem(quit)
     }
@@ -272,7 +292,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     nonisolated private func commonTargets(_ hostLists: [[LogiHost]]) -> [CommonTarget] {
         guard let first = hostLists.first else { return [] }
+        var seenNames: Set<String> = []
         return first.compactMap { host in
+            let normalizedName = host.name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            guard seenNames.insert(normalizedName).inserted else { return nil }
             let matching = hostLists.map { list in list.first { $0.name.compare(host.name, options: .caseInsensitive) == .orderedSame } }
             guard matching.allSatisfy({ $0 != nil }) else { return nil }
             return CommonTarget(name: host.name, isCurrent: matching.allSatisfy { $0?.connected == true })
