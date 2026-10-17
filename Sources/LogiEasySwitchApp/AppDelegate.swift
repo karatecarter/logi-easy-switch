@@ -105,7 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 for device in devices {
                     hostsByDevice[device.id] = (try? LogiAgent().hosts(for: device)) ?? []
                 }
-                await MainActor.run {
+                await MainActor.run { [hostsByDevice] in
                     self.cachedDevices = devices
                     self.cachedHosts = hostsByDevice
                     self.deviceLoadError = nil
@@ -439,11 +439,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         if kind == "device", parts.count == 3, let channel = Int(parts[2]), let device = cachedDevices.first(where: { $0.id == parts[1] }) {
             Task.detached { [weak self] in
+                guard let self else { return }
                 do {
                     guard let host = try LogiAgent().hosts(for: device).first(where: { $0.index == channel }) else { return }
                     try LogiAgent().switchDevice(device, to: host)
-                    await MainActor.run { self?.refreshMenu() }
-                } catch { await MainActor.run { self?.showError(error) } }
+                    await MainActor.run { self.refreshMenu() }
+                } catch { await MainActor.run { self.showError(error) } }
             }
         }
     }
