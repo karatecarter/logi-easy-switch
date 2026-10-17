@@ -28,8 +28,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         mqtt.onTargetRequested = { [weak self] target in
             guard let self else { return }
             let machine = self.defaults.machineName(matchingDisplayName: target) ?? target
-            // Probe on every network command. A Mac that just received the
-            // devices may not have refreshed its menu cache yet.
+            let thisComputer = self.defaults.displayName(for: self.defaults.mqtt.computerName)
+            if self.mqtt.currentTarget?.compare(thisComputer, options: .caseInsensitive) == .orderedSame {
+                let selected = self.defaults.selectedDevices(from: self.cachedDevices)
+                if selected.count == 2 {
+                    self.switchDevices(selected, targetName: machine)
+                    return
+                }
+            }
+            // A Mac that may have just received the devices still probes so it
+            // can take ownership even if its cache has not refreshed yet.
             self.loadDevices(requestedTarget: machine)
         }
         mqtt.onStateChanged = { [weak self] in
@@ -157,7 +165,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         let selected = defaults.selectedDevices(from: cachedDevices)
-        let targets = Dictionary(uniqueKeysWithValues: commonTargets(selected.map { cachedHosts[$0.id] ?? [] }).map { ($0.name, $0) })
+        let targets = Dictionary(uniqueKeysWithValues: commonTargets(selected.map { cachedHosts[$0.id] ?? [] })
+            .filter { defaults.isMachineVisible($0.name) }
+            .map { ($0.name, $0) })
         for item in menu.items {
             guard let name = item.representedObject as? String, let target = targets[name] else { continue }
             item.state = isCurrentTarget(name, hardwareCurrent: target.isCurrent, devices: selected) ? .on : .off
@@ -174,14 +184,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(.separator())
         }
         if let deviceLoadError, cachedDevices.isEmpty {
-            if defaults.mqtt.isUsable, !defaults.knownMachineNames.isEmpty {
+            if defaults.mqtt.isUsable, defaults.knownMachineNames.contains(where: defaults.isMachineVisible) {
                 buildNetworkTargetsMenu()
             } else {
                 let errorItem = menu.addItem(withTitle: deviceLoadError, action: nil, keyEquivalent: "")
                 errorItem.isEnabled = false
             }
         } else if cachedDevices.isEmpty {
-            if defaults.mqtt.isUsable, !defaults.knownMachineNames.isEmpty {
+            if defaults.mqtt.isUsable, defaults.knownMachineNames.contains(where: defaults.isMachineVisible) {
                 buildNetworkTargetsMenu()
             } else {
                 menu.addItem(withTitle: "Open menu to load devices", action: nil, keyEquivalent: "")
@@ -190,7 +200,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             buildPerDeviceMenu(cachedDevices.filter(\.isAvailable))
         } else if selected.count == 2 {
             buildCommonTargetsMenu(for: selected)
-        } else if defaults.mqtt.isUsable, !defaults.knownMachineNames.isEmpty {
+        } else if defaults.mqtt.isUsable, defaults.knownMachineNames.contains(where: defaults.isMachineVisible) {
             buildNetworkTargetsMenu()
         } else {
             menu.addItem(withTitle: "Choose a default mouse and keyboard in Settings", action: nil, keyEquivalent: "")
@@ -209,6 +219,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func buildCommonTargetsMenu(for devices: [LogiDevice]) {
         let common = commonTargets(devices.map { cachedHosts[$0.id] ?? [] })
+            .filter { defaults.isMachineVisible($0.name) }
         if common.isEmpty {
             menu.addItem(withTitle: "No common Easy-Switch target", action: nil, keyEquivalent: "")
         }
@@ -230,7 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func buildNetworkTargetsMenu() {
-        for target in defaults.knownMachineNames {
+        for target in defaults.knownMachineNames where defaults.isMachineVisible(target) {
             let item = NSMenuItem(title: defaults.displayName(for: target), action: #selector(switchDefaultPair(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = target
@@ -252,7 +263,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if hosts.isEmpty {
                 submenu.addItem(withTitle: "No paired Easy-Switch targets", action: nil, keyEquivalent: "")
             }
-            for host in hosts {
+            for host in hosts where defaults.isMachineVisible(host.name) {
                 let hostItem = NSMenuItem(title: defaults.displayName(for: host.name), action: #selector(switchSingleDevice(_:)), keyEquivalent: "")
                 hostItem.target = self
                 hostItem.representedObject = DeviceTarget(device: device, host: host)
@@ -289,14 +300,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func switchDevices(_ devices: [LogiDevice], targetName: String) {
+        let knownHosts = cachedHosts
         Task.detached { [weak self] in
             guard let self else { return }
             do {
                 var targets: [DeviceTarget] = []
                 for device in devices {
-                    guard let host = try LogiAgent().hosts(for: device).first(where: {
+                    let cachedHost = knownHosts[device.id]?.first {
                         $0.name.compare(targetName, options: .caseInsensitive) == .orderedSame
-                    }) else {
+                    }
+                    let host = try cachedHost ?? LogiAgent().hosts(for: device).first {
+                        $0.name.compare(targetName, options: .caseInsensitive) == .orderedSame
+                    }
+                    guard let host else {
                         throw LogiError.requestFailed("\(targetName) is not paired on \(device.name).")
                     }
                     targets.append(DeviceTarget(device: device, host: host))
@@ -345,7 +361,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func presentSettings() {
         let targets = shortcutTargets()
-        let machineNames = Array(Set(defaults.knownMachineNames + cachedHosts.values.flatMap { $0.map(\.name) })).sorted {
+        let machineNames = Array(Set(defaults.knownMachineNames + cachedHosts.values.flatMap { $0.map(\.name) }))
+            .filter { !defaults.removedMachineNames.contains($0) }
+            .sorted {
             $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
         }
         let controller = NSHostingController(rootView: SettingsView(defaults: defaults, devices: cachedDevices, didSave: { [weak self] in
@@ -400,23 +418,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let selectedHosts = selected.compactMap { device in pairs.first(where: { $0.0.id == device.id })?.1 }
         if selectedHosts.count == 2 {
             for host in selectedHosts[0] where selectedHosts[1].contains(where: { $0.name == host.name }) {
-                results.append(ShortcutTarget(id: "default:\(host.name)", label: "Default pair → \(host.name)"))
+                results.append(ShortcutTarget(id: "default:\(host.name)", label: "Default pair → \(host.name)", machineName: host.name))
             }
         }
         for (device, hosts) in pairs {
-            for host in hosts { results.append(ShortcutTarget(id: "device:\(device.id):\(host.index)", label: "\(device.name) → \(host.name)")) }
+            for host in hosts {
+                results.append(ShortcutTarget(id: "device:\(device.id):\(host.index)", label: "\(device.name) → \(host.name)", machineName: host.name))
+            }
         }
         return results
     }
 
     private func installHotkeys() {
-        hotkeys.replace(with: defaults.hotkeys) { [weak self] target in
+        let visibleIDs = Set(shortcutTargets().filter { defaults.isMachineVisible($0.machineName) }.map(\.id))
+        let visibleHotkeys = defaults.hotkeys.filter { visibleIDs.contains($0.key) }
+        hotkeys.replace(with: visibleHotkeys) { [weak self] target in
             Task { @MainActor in self?.runHotkey(target) }
         }
     }
 
     private func configureMQTT() {
-        mqtt.configure(defaults.mqtt, password: MQTTPasswordStore.load(), targets: defaults.knownMachineNames.map(defaults.displayName(for:)))
+        mqtt.configure(
+            defaults.mqtt,
+            password: MQTTPasswordStore.load(),
+            targets: defaults.knownMachineNames.filter(defaults.isMachineVisible).map(defaults.displayName(for:))
+        )
     }
 
     private func currentLocalTarget() -> String? {

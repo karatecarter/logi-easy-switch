@@ -6,6 +6,8 @@ final class DeviceDefaults: ObservableObject {
     @Published var keyboardID: String
     @Published var hotkeys: [String: Shortcut]
     @Published var aliases: [String: String]
+    @Published var hiddenMachineNames: Set<String>
+    @Published var removedMachineNames: Set<String>
     @Published var mqtt: MQTTConfiguration
     @Published private(set) var knownMachineNames: [String]
 
@@ -23,6 +25,8 @@ final class DeviceDefaults: ObservableObject {
         keyboardName = UserDefaults.standard.string(forKey: keyboardNameKey) ?? ""
         hotkeys = (try? JSONDecoder().decode([String: Shortcut].self, from: UserDefaults.standard.data(forKey: "hotkeys") ?? Data())) ?? [:]
         aliases = (try? JSONDecoder().decode([String: String].self, from: UserDefaults.standard.data(forKey: "machineAliases") ?? Data())) ?? [:]
+        hiddenMachineNames = Set(UserDefaults.standard.stringArray(forKey: "hiddenMachineNames") ?? [])
+        removedMachineNames = Set(UserDefaults.standard.stringArray(forKey: "removedMachineNames") ?? [])
         mqtt = (try? JSONDecoder().decode(MQTTConfiguration.self, from: UserDefaults.standard.data(forKey: "mqttConfiguration") ?? Data())) ?? MQTTConfiguration()
         knownMachineNames = UserDefaults.standard.stringArray(forKey: "knownMachineNames") ?? []
     }
@@ -68,6 +72,8 @@ final class DeviceDefaults: ObservableObject {
         UserDefaults.standard.set(keyboardName, forKey: keyboardNameKey)
         UserDefaults.standard.set(try? JSONEncoder().encode(hotkeys), forKey: "hotkeys")
         UserDefaults.standard.set(try? JSONEncoder().encode(aliases), forKey: "machineAliases")
+        UserDefaults.standard.set(Array(hiddenMachineNames).sorted(), forKey: "hiddenMachineNames")
+        UserDefaults.standard.set(Array(removedMachineNames).sorted(), forKey: "removedMachineNames")
         UserDefaults.standard.set(try? JSONEncoder().encode(mqtt), forKey: "mqttConfiguration")
         UserDefaults.standard.set(knownMachineNames, forKey: "knownMachineNames")
     }
@@ -77,8 +83,31 @@ final class DeviceDefaults: ObservableObject {
         return alias.isEmpty ? machine : alias
     }
 
+    func isMachineVisible(_ machine: String) -> Bool {
+        !hiddenMachineNames.contains(machine) && !removedMachineNames.contains(machine)
+    }
+
+    func setMachine(_ machine: String, visible: Bool) {
+        if visible {
+            hiddenMachineNames.remove(machine)
+        } else {
+            hiddenMachineNames.insert(machine)
+        }
+        save()
+    }
+
+    func removeMachine(_ machine: String) {
+        removedMachineNames.insert(machine)
+        hiddenMachineNames.remove(machine)
+        knownMachineNames.removeAll { $0 == machine }
+        aliases.removeValue(forKey: machine)
+        hotkeys.removeValue(forKey: "default:\(machine)")
+        save()
+    }
+
     func rememberMachineNames(_ names: [String]) {
-        let combined = Array(Set(knownMachineNames + names.filter { !$0.isEmpty })).sorted {
+        let remembered = names.filter { !$0.isEmpty && !removedMachineNames.contains($0) }
+        let combined = Array(Set(knownMachineNames + remembered)).sorted {
             $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
         }
         guard combined != knownMachineNames else { return }
@@ -88,7 +117,8 @@ final class DeviceDefaults: ObservableObject {
 
     func machineName(matchingDisplayName displayedName: String) -> String? {
         knownMachineNames.first { machine in
-            machine.compare(displayedName, options: .caseInsensitive) == .orderedSame ||
+            guard !removedMachineNames.contains(machine) else { return false }
+            return machine.compare(displayedName, options: .caseInsensitive) == .orderedSame ||
             displayName(for: machine).compare(displayedName, options: .caseInsensitive) == .orderedSame
         }
     }
@@ -181,7 +211,7 @@ struct SettingsView: View {
                         if !machineNames.contains(mqtt.computerName) {
                             Text(defaults.displayName(for: mqtt.computerName)).tag(mqtt.computerName)
                         }
-                        ForEach(machineNames, id: \.self) { machine in
+                        ForEach(machineNames.filter { !defaults.removedMachineNames.contains($0) }, id: \.self) { machine in
                             Text(defaults.displayName(for: machine)).tag(machine)
                         }
                     }
@@ -207,11 +237,27 @@ struct SettingsView: View {
             Text("Machine aliases")
                 .font(.headline)
 
-            ForEach(machineNames, id: \.self) { machine in
+            Text("Uncheck Show to hide a remembered computer from menus, hotkeys, and Home Assistant controls.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            ForEach(machineNames.filter { !defaults.removedMachineNames.contains($0) }, id: \.self) { machine in
                 HStack {
+                    Toggle("Show", isOn: machineVisibilityBinding(for: machine))
+                        .toggleStyle(.checkbox)
+                        .frame(width: 65, alignment: .leading)
                     Text(machine)
                         .frame(width: 180, alignment: .leading)
                     TextField("Optional alias", text: aliasBinding(for: machine))
+                    Button {
+                        defaults.removeMachine(machine)
+                        didSave()
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Forget \(machine)")
+                    .disabled(machine == mqtt.computerName)
                 }
             }
 
@@ -220,7 +266,7 @@ struct SettingsView: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(targets) { target in
+                    ForEach(targets.filter { defaults.isMachineVisible($0.machineName) }) { target in
                         HStack(spacing: 12) {
                             Text(target.label)
                                 .lineLimit(1)
@@ -299,6 +345,16 @@ struct SettingsView: View {
         )
     }
 
+    private func machineVisibilityBinding(for machine: String) -> Binding<Bool> {
+        Binding(
+            get: { defaults.isMachineVisible(machine) },
+            set: { visible in
+                defaults.setMachine(machine, visible: visible)
+                didSave()
+            }
+        )
+    }
+
     private func testMQTTConnection() {
         testingMQTT = true
         mqttTestStatus = nil
@@ -317,6 +373,7 @@ struct SettingsView: View {
 struct ShortcutTarget: Identifiable {
     let id: String
     let label: String
+    let machineName: String
 }
 
 @MainActor
