@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let defaults = DeviceDefaults()
     private let hotkeys = HotkeyManager()
     private let mqtt = MQTTCoordinator()
+    private let usbTriggerMonitor = USBTriggerMonitor()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installApplicationMenu()
@@ -29,7 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             let machine = self.defaults.machineName(matchingDisplayName: target) ?? target
             let thisComputer = self.defaults.displayName(for: self.defaults.mqtt.computerName)
-            if self.mqtt.currentTarget?.compare(thisComputer, options: .caseInsensitive) == .orderedSame {
+            if self.mqtt.isLocalOwner(thisComputer) {
                 let selected = self.defaults.selectedDevices(from: self.cachedDevices)
                 if selected.count == 2 {
                     self.switchDevices(selected, targetName: machine)
@@ -44,7 +45,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             if self.isMenuOpen { self.updateVisibleMenuState() } else { self.rebuildMenu() }
         }
+        usbTriggerMonitor.onConnect = { [weak self] in
+            guard let self, self.defaults.mqtt.isUsable else { return }
+            let target = self.defaults.displayName(for: self.defaults.mqtt.computerName)
+            _ = self.mqtt.requestTarget(target)
+        }
         configureMQTT()
+        configureUSBTrigger()
         installHotkeys()
         rebuildMenu()
         loadDevices()
@@ -75,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        usbTriggerMonitor.stop()
         mqtt.stop()
     }
 
@@ -233,10 +241,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func isCurrentTarget(_ name: String, hardwareCurrent: Bool, devices: [LogiDevice]) -> Bool {
-        guard devices.count == 2, devices.allSatisfy(\.connected) else { return false }
         if defaults.mqtt.isUsable {
-            return name.compare(defaults.mqtt.computerName, options: .caseInsensitive) == .orderedSame
+            return mqtt.currentTarget?.compare(defaults.displayName(for: name), options: .caseInsensitive) == .orderedSame
         }
+        guard devices.count == 2, devices.allSatisfy(\.connected) else { return false }
         return hardwareCurrent
     }
 
@@ -276,7 +284,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func switchDefaultPair(_ sender: NSMenuItem) {
         guard let targetName = sender.representedObject as? String else { return }
         if defaults.mqtt.isUsable {
-            guard mqtt.requestTarget(targetName) else {
+            guard mqtt.requestTarget(defaults.displayName(for: targetName)) else {
                 showError(LogiError.unavailable("Home Assistant MQTT is not connected."))
                 return
             }
@@ -369,8 +377,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let controller = NSHostingController(rootView: SettingsView(defaults: defaults, devices: cachedDevices, didSave: { [weak self] in
             self?.installHotkeys()
             self?.configureMQTT()
+            self?.configureUSBTrigger()
             self?.refreshMenu()
-        }, targets: targets, machineNames: machineNames))
+        }, targets: targets, machineNames: machineNames, usbDevices: USBDeviceDiscovery.devices()))
         let window = NSWindow(contentViewController: controller)
         window.title = "Logi Easy Switch Settings"
         window.styleMask = [.titled, .closable]
@@ -445,6 +454,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
     }
 
+    private func configureUSBTrigger() {
+        usbTriggerMonitor.configure(defaults.usbTrigger)
+    }
+
     private func currentLocalTarget() -> String? {
         let selected = defaults.selectedDevices(from: cachedDevices)
         guard selected.count == 2, selected.allSatisfy(\.connected) else { return nil }
@@ -459,7 +472,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let parts = target.split(separator: ":", maxSplits: 2).map(String.init)
         guard let kind = parts.first else { return }
         if kind == "default", parts.count == 2 {
-            if defaults.mqtt.isUsable, mqtt.requestTarget(parts[1]) { return }
+            if defaults.mqtt.isUsable, mqtt.requestTarget(defaults.displayName(for: parts[1])) { return }
             switchDevices(defaults.selectedDevices(from: cachedDevices), targetName: parts[1])
             return
         }

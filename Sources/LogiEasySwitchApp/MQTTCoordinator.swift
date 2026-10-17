@@ -62,8 +62,14 @@ final class MQTTCoordinator: ObservableObject {
 
     func requestTarget(_ target: String) -> Bool {
         guard state == .connected else { return false }
+        currentTarget = target
+        onStateChanged?()
         client?.publish(topic: commandTopic, string: target)
         return true
+    }
+
+    func isLocalOwner(_ computer: String) -> Bool {
+        localCurrentTarget?.compare(computer, options: .caseInsensitive) == .orderedSame
     }
 
     func publishCurrentTarget(_ target: String) {

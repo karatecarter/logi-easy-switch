@@ -9,6 +9,7 @@ final class DeviceDefaults: ObservableObject {
     @Published var hiddenMachineNames: Set<String>
     @Published var removedMachineNames: Set<String>
     @Published var mqtt: MQTTConfiguration
+    @Published var usbTrigger: USBTriggerConfiguration
     @Published private(set) var knownMachineNames: [String]
 
     private let mouseKey = "defaultMouseID"
@@ -28,6 +29,7 @@ final class DeviceDefaults: ObservableObject {
         hiddenMachineNames = Set(UserDefaults.standard.stringArray(forKey: "hiddenMachineNames") ?? [])
         removedMachineNames = Set(UserDefaults.standard.stringArray(forKey: "removedMachineNames") ?? [])
         mqtt = (try? JSONDecoder().decode(MQTTConfiguration.self, from: UserDefaults.standard.data(forKey: "mqttConfiguration") ?? Data())) ?? MQTTConfiguration()
+        usbTrigger = (try? JSONDecoder().decode(USBTriggerConfiguration.self, from: UserDefaults.standard.data(forKey: "usbTriggerConfiguration") ?? Data())) ?? USBTriggerConfiguration()
         knownMachineNames = UserDefaults.standard.stringArray(forKey: "knownMachineNames") ?? []
     }
 
@@ -75,6 +77,7 @@ final class DeviceDefaults: ObservableObject {
         UserDefaults.standard.set(Array(hiddenMachineNames).sorted(), forKey: "hiddenMachineNames")
         UserDefaults.standard.set(Array(removedMachineNames).sorted(), forKey: "removedMachineNames")
         UserDefaults.standard.set(try? JSONEncoder().encode(mqtt), forKey: "mqttConfiguration")
+        UserDefaults.standard.set(try? JSONEncoder().encode(usbTrigger), forKey: "usbTriggerConfiguration")
         UserDefaults.standard.set(knownMachineNames, forKey: "knownMachineNames")
     }
 
@@ -134,6 +137,7 @@ struct SettingsView: View {
     let didSave: () -> Void
     let targets: [ShortcutTarget]
     let machineNames: [String]
+    let usbDevices: [USBDeviceDescriptor]
 
     @State private var mouseID = ""
     @State private var keyboardID = ""
@@ -144,6 +148,7 @@ struct SettingsView: View {
     @State private var mqttPassword = ""
     @State private var mqttTestStatus: String?
     @State private var testingMQTT = false
+    @State private var usbTrigger = USBTriggerConfiguration()
     @StateObject private var capture = ShortcutCaptureModel()
 
     private var mice: [LogiDevice] { devices.filter { $0.type == "MOUSE" } }
@@ -234,6 +239,29 @@ struct SettingsView: View {
                 }
             }
 
+            Divider()
+
+            Text("USB trigger")
+                .font(.headline)
+
+            Toggle("Take the keyboard and mouse when a USB device connects", isOn: $usbTrigger.enabled)
+
+            if usbTrigger.enabled {
+                Picker("USB device", selection: $usbTrigger.deviceID) {
+                    Text("Choose a connected USB device").tag("")
+                    if !usbTrigger.deviceID.isEmpty && !usbDevices.contains(where: { $0.id == usbTrigger.deviceID }) {
+                        Text("\(usbTrigger.deviceName) (not connected)").tag(usbTrigger.deviceID)
+                    }
+                    ForEach(usbDevices) { device in
+                        Text(device.name).tag(device.id)
+                    }
+                }
+
+                Text("When this device is newly connected, this Mac requests the default keyboard and mouse through Home Assistant MQTT.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Text("Machine aliases")
                 .font(.headline)
 
@@ -301,6 +329,7 @@ struct SettingsView: View {
                 : nil
             mqtt = defaults.mqtt
             mqttPassword = MQTTPasswordStore.load()
+            usbTrigger = defaults.usbTrigger
             capture.onCapture = { id, shortcut in
                 workingHotkeys[id] = shortcut
                 saveHotkeys()
@@ -315,6 +344,16 @@ struct SettingsView: View {
         }
         .onChange(of: mqttPassword) { _, value in
             MQTTPasswordStore.save(value)
+            didSave()
+        }
+        .onChange(of: usbTrigger.deviceID) { _, deviceID in
+            if let device = usbDevices.first(where: { $0.id == deviceID }) {
+                usbTrigger.deviceName = device.name
+            }
+        }
+        .onChange(of: usbTrigger) { _, value in
+            defaults.usbTrigger = value
+            defaults.save()
             didSave()
         }
     }
