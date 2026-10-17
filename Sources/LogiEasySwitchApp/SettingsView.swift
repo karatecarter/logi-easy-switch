@@ -6,6 +6,8 @@ final class DeviceDefaults: ObservableObject {
     @Published var keyboardID: String
     @Published var hotkeys: [String: Shortcut]
     @Published var aliases: [String: String]
+    @Published var mqtt: MQTTConfiguration
+    @Published private(set) var knownMachineNames: [String]
 
     private let mouseKey = "defaultMouseID"
     private let keyboardKey = "defaultKeyboardID"
@@ -21,6 +23,8 @@ final class DeviceDefaults: ObservableObject {
         keyboardName = UserDefaults.standard.string(forKey: keyboardNameKey) ?? ""
         hotkeys = (try? JSONDecoder().decode([String: Shortcut].self, from: UserDefaults.standard.data(forKey: "hotkeys") ?? Data())) ?? [:]
         aliases = (try? JSONDecoder().decode([String: String].self, from: UserDefaults.standard.data(forKey: "machineAliases") ?? Data())) ?? [:]
+        mqtt = (try? JSONDecoder().decode(MQTTConfiguration.self, from: UserDefaults.standard.data(forKey: "mqttConfiguration") ?? Data())) ?? MQTTConfiguration()
+        knownMachineNames = UserDefaults.standard.stringArray(forKey: "knownMachineNames") ?? []
     }
 
     func selectedDevices(from devices: [LogiDevice]) -> [LogiDevice] {
@@ -64,11 +68,29 @@ final class DeviceDefaults: ObservableObject {
         UserDefaults.standard.set(keyboardName, forKey: keyboardNameKey)
         UserDefaults.standard.set(try? JSONEncoder().encode(hotkeys), forKey: "hotkeys")
         UserDefaults.standard.set(try? JSONEncoder().encode(aliases), forKey: "machineAliases")
+        UserDefaults.standard.set(try? JSONEncoder().encode(mqtt), forKey: "mqttConfiguration")
+        UserDefaults.standard.set(knownMachineNames, forKey: "knownMachineNames")
     }
 
     func displayName(for machine: String) -> String {
         let alias = aliases[machine]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return alias.isEmpty ? machine : alias
+    }
+
+    func rememberMachineNames(_ names: [String]) {
+        let combined = Array(Set(knownMachineNames + names.filter { !$0.isEmpty })).sorted {
+            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+        }
+        guard combined != knownMachineNames else { return }
+        knownMachineNames = combined
+        save()
+    }
+
+    func machineName(matchingDisplayName displayedName: String) -> String? {
+        knownMachineNames.first { machine in
+            machine.compare(displayedName, options: .caseInsensitive) == .orderedSame ||
+            displayName(for: machine).compare(displayedName, options: .caseInsensitive) == .orderedSame
+        }
     }
 
     private func namesMatch(_ left: String, _ right: String) -> Bool {
@@ -88,12 +110,17 @@ struct SettingsView: View {
     @State private var workingHotkeys: [String: Shortcut] = [:]
     @State private var startAtLogin = false
     @State private var loginItemMessage: String?
+    @State private var mqtt = MQTTConfiguration()
+    @State private var mqttPassword = ""
+    @State private var mqttTestStatus: String?
+    @State private var testingMQTT = false
     @StateObject private var capture = ShortcutCaptureModel()
 
     private var mice: [LogiDevice] { devices.filter { $0.type == "MOUSE" } }
     private var keyboards: [LogiDevice] { devices.filter { $0.type == "KEYBOARD" } }
 
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 14) {
             Text("Default devices")
                 .font(.title2)
@@ -130,6 +157,51 @@ struct SettingsView: View {
                 Text(loginItemMessage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            Divider()
+
+            Text("Home Assistant")
+                .font(.headline)
+
+            Toggle("Enable network switching through MQTT", isOn: $mqtt.enabled)
+
+            if mqtt.enabled {
+                Group {
+                    TextField("Broker address", text: $mqtt.host)
+                    HStack {
+                        TextField("Port", value: $mqtt.port, format: .number)
+                            .frame(width: 120)
+                        Toggle("Use TLS", isOn: $mqtt.useTLS)
+                    }
+                    TextField("Username", text: $mqtt.username)
+                    SecureField("Password", text: $mqttPassword)
+
+                    Picker("This computer", selection: $mqtt.computerName) {
+                        if !machineNames.contains(mqtt.computerName) {
+                            Text(defaults.displayName(for: mqtt.computerName)).tag(mqtt.computerName)
+                        }
+                        ForEach(machineNames, id: \.self) { machine in
+                            Text(defaults.displayName(for: machine)).tag(machine)
+                        }
+                    }
+
+                    Toggle("Add controls to Home Assistant automatically", isOn: $mqtt.discoveryEnabled)
+
+                    HStack {
+                        Button(testingMQTT ? "Testing…" : "Test Connection") { testMQTTConnection() }
+                            .disabled(testingMQTT)
+                        if let mqttTestStatus {
+                            Text(mqttTestStatus)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Text("Home Assistant will receive a target-computer selector and current-computer sensor. MQTT credentials are stored in Keychain.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Text("Machine aliases")
@@ -171,6 +243,7 @@ struct SettingsView: View {
             }
         }
         .padding(20)
+        }
         .onAppear {
             defaults.applyFallbacks(from: devices)
             mouseID = defaults.mouseID
@@ -180,6 +253,8 @@ struct SettingsView: View {
             loginItemMessage = LaunchAtLogin.requiresApproval
                 ? "Approval required in System Settings → General → Login Items."
                 : nil
+            mqtt = defaults.mqtt
+            mqttPassword = MQTTPasswordStore.load()
             capture.onCapture = { id, shortcut in
                 workingHotkeys[id] = shortcut
                 saveHotkeys()
@@ -187,6 +262,15 @@ struct SettingsView: View {
         }
         .onChange(of: mouseID) { _, _ in saveSelectedDevices() }
         .onChange(of: keyboardID) { _, _ in saveSelectedDevices() }
+        .onChange(of: mqtt) { _, value in
+            defaults.mqtt = value
+            defaults.save()
+            didSave()
+        }
+        .onChange(of: mqttPassword) { _, value in
+            MQTTPasswordStore.save(value)
+            didSave()
+        }
     }
 
     private func saveSelectedDevices() {
@@ -213,6 +297,20 @@ struct SettingsView: View {
                 defaults.save()
             }
         )
+    }
+
+    private func testMQTTConnection() {
+        testingMQTT = true
+        mqttTestStatus = nil
+        MQTTCoordinator.test(configuration: mqtt, password: mqttPassword) { result in
+            DispatchQueue.main.async {
+                testingMQTT = false
+                switch result {
+                case .success: mqttTestStatus = "Connected"
+                case .failure(let error): mqttTestStatus = error.localizedDescription
+                }
+            }
+        }
     }
 }
 

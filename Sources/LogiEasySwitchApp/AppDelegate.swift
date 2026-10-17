@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var deviceLoadError: String?
     private let defaults = DeviceDefaults()
     private let hotkeys = HotkeyManager()
+    private let mqtt = MQTTCoordinator()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         HIDPPTransport.requestInputMonitoringAccessIfNeeded()
@@ -24,9 +25,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.button?.toolTip = "Logi Easy Switch"
         menu.delegate = self
         statusItem.menu = menu
+        mqtt.onTargetRequested = { [weak self] target in
+            guard let self else { return }
+            let machine = self.defaults.machineName(matchingDisplayName: target) ?? target
+            // Probe on every network command. A Mac that just received the
+            // devices may not have refreshed its menu cache yet.
+            self.loadDevices(requestedTarget: machine)
+        }
+        mqtt.onStateChanged = { [weak self] in
+            guard let self else { return }
+            if self.isMenuOpen { self.updateVisibleMenuState() } else { self.rebuildMenu() }
+        }
+        configureMQTT()
         installHotkeys()
         rebuildMenu()
         loadDevices()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        mqtt.stop()
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -55,7 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         loadDevices()
     }
 
-    private func loadDevices() {
+    private func loadDevices(requestedTarget: String? = nil) {
         Task.detached { [weak self] in
             guard let self else { return }
             do {
@@ -69,6 +86,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.cachedHosts = hostsByDevice
                     self.deviceLoadError = nil
                     self.defaults.applyFallbacks(from: devices)
+                    let hostNames = hostsByDevice.values.flatMap { $0.map(\.name) }
+                    self.defaults.rememberMachineNames(hostNames)
+                    self.configureMQTT()
+                    if let current = self.currentLocalTarget() {
+                        self.mqtt.publishCurrentTarget(self.defaults.displayName(for: current))
+                    } else {
+                        self.mqtt.clearLocalOwnership()
+                    }
+                    if let requestedTarget {
+                        let selected = self.defaults.selectedDevices(from: devices)
+                        if selected.count == 2 { self.switchDevices(selected, targetName: requestedTarget) }
+                    }
                     if self.isMenuOpen {
                         self.updateVisibleMenuState()
                         self.refreshPending = true
@@ -114,11 +143,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func rebuildMenu() {
         menu.removeAllItems()
         let selected = defaults.selectedDevices(from: cachedDevices)
+        if defaults.mqtt.enabled {
+            let status = NSMenuItem(title: "Home Assistant: \(mqtt.state.label)", action: nil, keyEquivalent: "")
+            status.isEnabled = false
+            menu.addItem(status)
+            menu.addItem(.separator())
+        }
         if let deviceLoadError, cachedDevices.isEmpty {
-            let errorItem = menu.addItem(withTitle: deviceLoadError, action: nil, keyEquivalent: "")
-            errorItem.isEnabled = false
+            if defaults.mqtt.isUsable, !defaults.knownMachineNames.isEmpty {
+                buildNetworkTargetsMenu()
+            } else {
+                let errorItem = menu.addItem(withTitle: deviceLoadError, action: nil, keyEquivalent: "")
+                errorItem.isEnabled = false
+            }
         } else if cachedDevices.isEmpty {
-            menu.addItem(withTitle: "Open menu to load devices", action: nil, keyEquivalent: "")
+            if defaults.mqtt.isUsable, !defaults.knownMachineNames.isEmpty {
+                buildNetworkTargetsMenu()
+            } else {
+                menu.addItem(withTitle: "Open menu to load devices", action: nil, keyEquivalent: "")
+            }
         } else if optionMode {
             buildPerDeviceMenu(cachedDevices.filter(\.isAvailable))
         } else if selected.count == 2 {
@@ -133,6 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let refresh = NSMenuItem(title: "Refresh", action: #selector(refreshMenuFromAction), keyEquivalent: "")
         refresh.target = self
         menu.addItem(refresh)
+        menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit Logi Easy Switch", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
         menu.addItem(quit)
     }
@@ -147,6 +191,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item.target = self
             item.representedObject = target.name
             item.state = target.isCurrent && devices.allSatisfy(\.connected) ? .on : .off
+            menu.addItem(item)
+        }
+    }
+
+    private func buildNetworkTargetsMenu() {
+        for target in defaults.knownMachineNames {
+            let item = NSMenuItem(title: defaults.displayName(for: target), action: #selector(switchDefaultPair(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = target
+            item.state = mqtt.currentTarget?.compare(defaults.displayName(for: target), options: .caseInsensitive) == .orderedSame ? .on : .off
             menu.addItem(item)
         }
     }
@@ -176,6 +230,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func switchDefaultPair(_ sender: NSMenuItem) {
         guard let targetName = sender.representedObject as? String else { return }
+        if defaults.mqtt.isUsable {
+            guard mqtt.requestTarget(targetName) else {
+                showError(LogiError.unavailable("Home Assistant MQTT is not connected."))
+                return
+            }
+            return
+        }
         let devices = defaults.selectedDevices(from: cachedDevices)
         switchDevices(devices, targetName: targetName)
     }
@@ -211,7 +272,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 for target in targets where !target.host.connected {
                     try LogiAgent().switchDevice(target.device, to: target.host)
                 }
-                await MainActor.run { self.refreshMenu() }
+                await MainActor.run {
+                    self.mqtt.publishCurrentTarget(self.defaults.displayName(for: targetName))
+                    self.refreshMenu()
+                }
             } catch {
                 await MainActor.run { self.showError(error) }
             }
@@ -255,17 +319,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func presentSettings() {
         let targets = shortcutTargets()
-        let machineNames = Array(Set(cachedHosts.values.flatMap { $0.map(\.name) })).sorted {
+        let machineNames = Array(Set(defaults.knownMachineNames + cachedHosts.values.flatMap { $0.map(\.name) })).sorted {
             $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
         }
         let controller = NSHostingController(rootView: SettingsView(defaults: defaults, devices: cachedDevices, didSave: { [weak self] in
             self?.installHotkeys()
+            self?.configureMQTT()
             self?.refreshMenu()
         }, targets: targets, machineNames: machineNames))
         let window = NSWindow(contentViewController: controller)
         window.title = "Logi Easy Switch Settings"
         window.styleMask = [.titled, .closable]
-        window.setContentSize(NSSize(width: 580, height: 620))
+        window.setContentSize(NSSize(width: 620, height: 720))
         window.isReleasedWhenClosed = false
         if let closeButton = window.standardWindowButton(.closeButton) {
             closeButton.keyEquivalent = "w"
@@ -324,10 +389,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    private func configureMQTT() {
+        mqtt.configure(defaults.mqtt, password: MQTTPasswordStore.load(), targets: defaults.knownMachineNames.map(defaults.displayName(for:)))
+    }
+
+    private func currentLocalTarget() -> String? {
+        let selected = defaults.selectedDevices(from: cachedDevices)
+        guard selected.count == 2 else { return nil }
+        let connected = selected.compactMap { device in cachedHosts[device.id]?.first(where: \.connected)?.name }
+        guard connected.count == 2,
+              connected[0].compare(connected[1], options: .caseInsensitive) == .orderedSame else { return nil }
+        return connected[0]
+    }
+
     private func runHotkey(_ target: String) {
         let parts = target.split(separator: ":", maxSplits: 2).map(String.init)
         guard let kind = parts.first else { return }
-        if kind == "default", parts.count == 2 { switchDevices(defaults.selectedDevices(from: cachedDevices), targetName: parts[1]); return }
+        if kind == "default", parts.count == 2 {
+            if defaults.mqtt.isUsable, mqtt.requestTarget(parts[1]) { return }
+            switchDevices(defaults.selectedDevices(from: cachedDevices), targetName: parts[1])
+            return
+        }
         if kind == "device", parts.count == 3, let channel = Int(parts[2]), let device = cachedDevices.first(where: { $0.id == parts[1] }) {
             Task.detached { [weak self] in
                 do {

@@ -1,0 +1,232 @@
+import Foundation
+
+@MainActor
+final class MQTTCoordinator: ObservableObject {
+    enum State: Equatable {
+        case disabled
+        case connecting
+        case connected
+        case failed(String)
+
+        var label: String {
+            switch self {
+            case .disabled: "Disabled"
+            case .connecting: "Connecting…"
+            case .connected: "Connected"
+            case .failed(let message): message
+            }
+        }
+    }
+
+    @Published private(set) var state: State = .disabled
+    @Published private(set) var currentTarget: String?
+    var onTargetRequested: ((String) -> Void)?
+    var onStateChanged: (() -> Void)?
+
+    private let commandTopic = "logi-easy-switch/command/target"
+    private let stateTopic = "logi-easy-switch/state/current-target"
+    private var configuration = MQTTConfiguration()
+    private var password = ""
+    private var targets: [String] = []
+    private var client: MQTTClient?
+    private var reconnectWorkItem: DispatchWorkItem?
+    private var reconnectDelay: TimeInterval = 2
+    private var intentionallyDisconnected = false
+    private var localCurrentTarget: String?
+
+    func configure(_ configuration: MQTTConfiguration, password: String, targets: [String]) {
+        let connectionChanged = self.configuration != configuration || self.password != password
+        self.configuration = configuration
+        self.password = password
+        self.targets = Array(Set(targets.filter { !$0.isEmpty })).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+
+        guard configuration.isUsable else {
+            intentionallyDisconnected = true
+            reconnectWorkItem?.cancel()
+            publishMacAvailability(online: false)
+            client?.disconnect()
+            client = nil
+            state = configuration.enabled ? .failed("Broker settings incomplete") : .disabled
+            return
+        }
+        if connectionChanged || client == nil {
+            intentionallyDisconnected = true
+            publishMacAvailability(online: false)
+            client?.disconnect()
+            intentionallyDisconnected = false
+            connect()
+        } else if state == .connected {
+            publishDiscovery()
+        }
+    }
+
+    func requestTarget(_ target: String) -> Bool {
+        guard state == .connected else { return false }
+        client?.publish(topic: commandTopic, string: target)
+        return true
+    }
+
+    func publishCurrentTarget(_ target: String) {
+        localCurrentTarget = target
+        currentTarget = target
+        if state == .connected { client?.publish(topic: stateTopic, string: target, retain: true) }
+        onStateChanged?()
+    }
+
+    func clearLocalOwnership() {
+        localCurrentTarget = nil
+    }
+
+    func stop() {
+        intentionallyDisconnected = true
+        reconnectWorkItem?.cancel()
+        publishMacAvailability(online: false)
+        client?.disconnect()
+        client = nil
+        state = .disabled
+    }
+
+    private func connect() {
+        reconnectWorkItem?.cancel()
+        guard configuration.isUsable else { return }
+        state = .connecting
+        let storedID = stableClientID()
+        let availabilityTopic = "logi-easy-switch/mac/\(storedID)/availability"
+        let mqtt = MQTTClient(
+            configuration: configuration,
+            password: password,
+            clientID: "logi-easy-switch-\(storedID)",
+            will: (availabilityTopic, "offline")
+        )
+        client = mqtt
+        mqtt.onConnected = { [weak self, weak mqtt] in
+            Task { @MainActor in
+                guard let self, self.client === mqtt else { return }
+                self.state = .connected
+                self.reconnectDelay = 2
+                mqtt?.subscribe(self.commandTopic)
+                mqtt?.subscribe(self.stateTopic)
+                self.publishDiscovery()
+                self.publishMacAvailability(online: true)
+                if let target = self.localCurrentTarget {
+                    mqtt?.publish(topic: self.stateTopic, string: target, retain: true)
+                }
+                self.onStateChanged?()
+            }
+        }
+        mqtt.onMessage = { [weak self, weak mqtt] topic, payload in
+            Task { @MainActor in
+                guard let self, self.client === mqtt, let value = String(data: payload, encoding: .utf8) else { return }
+                if topic == self.commandTopic { self.onTargetRequested?(value) }
+                if topic == self.stateTopic {
+                    self.currentTarget = value
+                    self.onStateChanged?()
+                }
+            }
+        }
+        mqtt.onDisconnected = { [weak self, weak mqtt] error in
+            Task { @MainActor in
+                guard let self, self.client === mqtt else { return }
+                self.client = nil
+                if self.intentionallyDisconnected { return }
+                self.state = .failed(error?.localizedDescription ?? "Disconnected")
+                self.onStateChanged?()
+                self.scheduleReconnect()
+            }
+        }
+        mqtt.connect()
+    }
+
+    private func scheduleReconnect() {
+        guard configuration.isUsable else { return }
+        let work = DispatchWorkItem { [weak self] in
+            Task { @MainActor in self?.connect() }
+        }
+        reconnectWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + reconnectDelay, execute: work)
+        reconnectDelay = min(reconnectDelay * 2, 30)
+    }
+
+    private func publishDiscovery() {
+        guard configuration.discoveryEnabled, state == .connected else { return }
+        let options = targets.isEmpty ? [configuration.computerName] : targets
+        let device: [String: Any] = [
+            "identifiers": ["logi-easy-switch-network"],
+            "name": "Logi Easy Switch",
+            "manufacturer": "Logi Easy Switch",
+            "model": "Network Controller",
+        ]
+        let origin: [String: Any] = ["name": "Logi Easy Switch", "sw_version": "0.2.0", "support_url": "https://github.com/karatecarter/logi-easy-switch"]
+        let select: [String: Any] = [
+            "name": "Target computer",
+            "unique_id": "logi_easy_switch_target",
+            "command_topic": commandTopic,
+            "state_topic": stateTopic,
+            "options": options,
+            "device": device,
+            "origin": origin,
+            "icon": "mdi:keyboard-outline",
+        ]
+        let sensor: [String: Any] = [
+            "name": "Current computer",
+            "unique_id": "logi_easy_switch_current_computer",
+            "state_topic": stateTopic,
+            "device": device,
+            "origin": origin,
+            "icon": "mdi:monitor",
+        ]
+        let id = stableClientID()
+        let availability: [String: Any] = [
+            "name": "\(configuration.computerName) availability",
+            "unique_id": "logi_easy_switch_\(id)_availability",
+            "state_topic": "logi-easy-switch/mac/\(id)/availability",
+            "payload_on": "online",
+            "payload_off": "offline",
+            "device_class": "connectivity",
+            "device": device,
+            "origin": origin,
+        ]
+        publishJSON(select, topic: "homeassistant/select/logi_easy_switch/target/config")
+        publishJSON(sensor, topic: "homeassistant/sensor/logi_easy_switch/current_computer/config")
+        publishJSON(availability, topic: "homeassistant/binary_sensor/logi_easy_switch/\(id)_availability/config")
+    }
+
+    private func publishMacAvailability(online: Bool) {
+        let id = stableClientID()
+        client?.publish(topic: "logi-easy-switch/mac/\(id)/availability", string: online ? "online" : "offline", retain: true)
+        client?.publish(topic: "logi-easy-switch/mac/\(id)/name", string: configuration.computerName, retain: true)
+    }
+
+    private func publishJSON(_ object: [String: Any], topic: String) {
+        guard let data = try? JSONSerialization.data(withJSONObject: object) else { return }
+        client?.publish(topic: topic, payload: data, retain: true)
+    }
+
+    private func stableClientID() -> String {
+        let key = "mqttClientID"
+        if let existing = UserDefaults.standard.string(forKey: key) { return existing }
+        let created = UUID().uuidString.lowercased()
+        UserDefaults.standard.set(created, forKey: key)
+        return created
+    }
+
+    static func test(configuration: MQTTConfiguration, password: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        guard configuration.isUsable else { completion(.failure(MQTTClient.ClientError.invalidConfiguration)); return }
+        let client = MQTTClient(configuration: configuration, password: password, clientID: "logi-easy-switch-test-\(UUID().uuidString.prefix(8))")
+        var finished = false
+        func finish(_ result: Result<Void, Error>) {
+            guard !finished else { return }
+            finished = true
+            completion(result)
+            client.disconnect()
+        }
+        client.onConnected = { Task { @MainActor in finish(.success(())) } }
+        client.onDisconnected = { error in
+            Task { @MainActor in finish(.failure(error ?? MQTTClient.ClientError.disconnected("Disconnected"))) }
+        }
+        client.connect()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+            finish(.failure(MQTTClient.ClientError.disconnected("Connection timed out")))
+        }
+    }
+}

@@ -37,6 +37,27 @@ Privacy & Security → Input Monitoring and then relaunching the app. Direct
 HID++ access currently discovers devices connected to this Mac over Bluetooth.
 The legacy Node CLI below still uses the older Options+ socket protocol.
 
+## Optional Home Assistant network switching
+
+Install and configure Home Assistant's MQTT integration (the Mosquitto Broker
+app is the simplest broker option), then enable **Home Assistant** in the app's
+Settings on every Mac that should participate. Enter the same broker address
+and credentials on each Mac and select the Easy-Switch target that represents
+that computer.
+
+Each app subscribes to a shared target command. Only the Mac that currently has
+the default keyboard and mouse connected acts on the command, so selecting a
+computer in any app—or in Home Assistant—moves the devices there. MQTT
+Discovery creates these Home Assistant entities automatically:
+
+- **Target computer** selector
+- **Current computer** sensor
+- An availability sensor for each participating Mac
+
+Broker passwords are stored in the macOS Keychain. TLS can be enabled for
+brokers configured with a trusted certificate. Local switching continues to
+work when the MQTT feature is disabled.
+
 ## Commands
 
 ```sh
