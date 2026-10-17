@@ -170,7 +170,7 @@ struct SettingsView: View {
                 Group {
                     TextField("Broker address", text: $mqtt.host)
                     HStack {
-                        TextField("Port", value: $mqtt.port, format: .number)
+                        TextField("Port", value: $mqtt.port, format: .number.grouping(.never))
                             .frame(width: 120)
                         Toggle("Use TLS", isOn: $mqtt.useTLS)
                     }

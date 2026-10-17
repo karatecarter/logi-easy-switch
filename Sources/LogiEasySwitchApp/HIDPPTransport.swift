@@ -10,12 +10,20 @@ private let changeHostFeature: UInt16 = 0x1814
 private let hostsInfoFeature: UInt16 = 0x1815
 
 struct HIDPPTransport {
+    private static let operationLock = NSLock()
+
     static func requestInputMonitoringAccessIfNeeded() {
         guard IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeUnknown else { return }
         _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
     }
 
     func devices() throws -> [LogiDevice] {
+        try Self.withLock {
+            try unlockedDevices()
+        }
+    }
+
+    private func unlockedDevices() throws -> [LogiDevice] {
         try candidates().compactMap { candidate in
             guard let type = candidate.type else { return nil }
             return try withSession(candidate) { session in
@@ -26,6 +34,12 @@ struct HIDPPTransport {
     }
 
     func hosts(for device: LogiDevice) throws -> [LogiHost] {
+        try Self.withLock {
+            try unlockedHosts(for: device)
+        }
+    }
+
+    private func unlockedHosts(for device: LogiDevice) throws -> [LogiHost] {
         guard let candidate = try candidates().first(where: { $0.id == device.id }) else {
             throw LogiError.unavailable("\(device.name) is not connected to this Mac.")
         }
@@ -67,16 +81,52 @@ struct HIDPPTransport {
     }
 
     func switchDevice(_ device: LogiDevice, to host: Int) throws {
-        guard let candidate = try candidates().first(where: { $0.id == device.id }) else {
-            throw LogiError.unavailable("\(device.name) is not connected to this Mac.")
-        }
-        try withSession(candidate) { session in
-            guard let index = try featureIndex(changeHostFeature, session: session) else {
-                throw LogiError.protocolError("\(device.name) does not support Easy-Switch.")
+        try switchDevices([(device, host)])
+    }
+
+    func switchDevices(_ targets: [(LogiDevice, Int)]) throws {
+        try Self.withLock {
+            let available = try candidates()
+            var opened: [HIDPPSession] = []
+            var prepared: [(session: HIDPPSession, feature: UInt8, host: Int)] = []
+            defer { opened.forEach { $0.close() } }
+
+            // Open and prepare every device before the first CHANGE_HOST
+            // command disconnects anything from this Mac.
+            for (device, host) in targets {
+                guard let candidate = available.first(where: { $0.id == device.id }) else {
+                    throw LogiError.unavailable("\(device.name) is not connected to this Mac.")
+                }
+                let session = try HIDPPSession(device: candidate.device)
+                opened.append(session)
+                guard let index = try featureIndex(changeHostFeature, session: session) else {
+                    throw LogiError.protocolError("\(device.name) does not support Easy-Switch.")
+                }
+                prepared.append((session, index, host))
             }
-            // CHANGE_HOST.setHost deliberately disconnects before a reply can arrive.
-            try session.send(feature: index, function: 1, parameters: [UInt8(host)])
+
+            for target in prepared {
+                // CHANGE_HOST.setHost deliberately disconnects before a reply can arrive.
+                var lastError: Error?
+                for attempt in 0..<3 {
+                    do {
+                        try target.session.send(feature: target.feature, function: 1, parameters: [UInt8(target.host)])
+                        lastError = nil
+                        break
+                    } catch {
+                        lastError = error
+                        if attempt < 2 { Thread.sleep(forTimeInterval: 0.05) }
+                    }
+                }
+                if let lastError { throw lastError }
+            }
         }
+    }
+
+    private static func withLock<T>(_ body: () throws -> T) rethrows -> T {
+        operationLock.lock()
+        defer { operationLock.unlock() }
+        return try body()
     }
 
     private func featureIndex(_ feature: UInt16, session: HIDPPSession) throws -> UInt8? {

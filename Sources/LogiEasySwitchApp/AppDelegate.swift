@@ -8,7 +8,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var optionMode = false
     private var isMenuOpen = false
     private var refreshPending = false
-    private var isOpeningSettings = false
     private var settingsWindow: NSWindow?
     private var cachedDevices: [LogiDevice] = []
     private var cachedHosts: [String: [LogiHost]] = [:]
@@ -18,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let mqtt = MQTTCoordinator()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        installApplicationMenu()
         HIDPPTransport.requestInputMonitoringAccessIfNeeded()
         statusItem.button?.image = Self.menuBarIcon()
         statusItem.button?.title = ""
@@ -40,6 +40,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         installHotkeys()
         rebuildMenu()
         loadDevices()
+    }
+
+    private func installApplicationMenu() {
+        let mainMenu = NSMenu()
+
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "Quit Logi Easy Switch", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+
+        NSApp.mainMenu = mainMenu
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -136,7 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let targets = Dictionary(uniqueKeysWithValues: commonTargets(selected.map { cachedHosts[$0.id] ?? [] }).map { ($0.name, $0) })
         for item in menu.items {
             guard let name = item.representedObject as? String, let target = targets[name] else { continue }
-            item.state = target.isCurrent && selected.allSatisfy(\.connected) ? .on : .off
+            item.state = isCurrentTarget(name, hardwareCurrent: target.isCurrent, devices: selected) ? .on : .off
         }
     }
 
@@ -166,6 +190,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             buildPerDeviceMenu(cachedDevices.filter(\.isAvailable))
         } else if selected.count == 2 {
             buildCommonTargetsMenu(for: selected)
+        } else if defaults.mqtt.isUsable, !defaults.knownMachineNames.isEmpty {
+            buildNetworkTargetsMenu()
         } else {
             menu.addItem(withTitle: "Choose a default mouse and keyboard in Settings", action: nil, keyEquivalent: "")
         }
@@ -190,9 +216,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let item = NSMenuItem(title: defaults.displayName(for: target.name), action: #selector(switchDefaultPair(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = target.name
-            item.state = target.isCurrent && devices.allSatisfy(\.connected) ? .on : .off
+            item.state = isCurrentTarget(target.name, hardwareCurrent: target.isCurrent, devices: devices) ? .on : .off
             menu.addItem(item)
         }
+    }
+
+    private func isCurrentTarget(_ name: String, hardwareCurrent: Bool, devices: [LogiDevice]) -> Bool {
+        guard devices.count == 2, devices.allSatisfy(\.connected) else { return false }
+        if defaults.mqtt.isUsable {
+            return name.compare(defaults.mqtt.computerName, options: .caseInsensitive) == .orderedSame
+        }
+        return hardwareCurrent
     }
 
     private func buildNetworkTargetsMenu() {
@@ -269,9 +303,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 // Keep the keyboard connected until the pointing device has moved.
                 targets.sort { $0.device.type == "MOUSE" && $1.device.type == "KEYBOARD" }
-                for target in targets where !target.host.connected {
-                    try LogiAgent().switchDevice(target.device, to: target.host)
-                }
+                let pending = targets.filter { !$0.host.connected }.map { ($0.device, $0.host) }
+                try LogiAgent().switchDevices(pending)
                 await MainActor.run {
                     self.mqtt.publishCurrentTarget(self.defaults.displayName(for: targetName))
                     self.refreshMenu()
@@ -285,34 +318,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func refreshMenuFromAction() { refreshMenu() }
 
     @objc private func openSettings() {
-        if let window = settingsWindow, window.isVisible {
+        if let window = settingsWindow {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        guard !isOpeningSettings else { return }
-        isOpeningSettings = true
+
+        // Settings must remain available even when Logitech device discovery is
+        // slow or a device is temporarily disconnected. Present the cached
+        // configuration immediately, then refresh the cache in the background.
+        presentSettings()
         Task.detached { [weak self] in
             guard let self else { return }
-            do {
-                let devices = try LogiAgent().devices()
-                var hostsByDevice: [String: [LogiHost]] = [:]
-                for device in devices {
-                    hostsByDevice[device.id] = (try? LogiAgent().hosts(for: device)) ?? []
-                }
-                let loadedHosts = hostsByDevice
-                await MainActor.run {
-                    self.isOpeningSettings = false
-                    self.cachedDevices = devices
-                    self.cachedHosts = loadedHosts
-                    self.defaults.applyFallbacks(from: devices)
-                    self.presentSettings()
-                }
-            } catch {
-                await MainActor.run {
-                    self.isOpeningSettings = false
-                    self.showError(error)
-                }
+            guard let devices = try? LogiAgent().devices() else { return }
+            var hostsByDevice: [String: [LogiHost]] = [:]
+            for device in devices {
+                hostsByDevice[device.id] = (try? LogiAgent().hosts(for: device)) ?? []
+            }
+            await MainActor.run {
+                self.cachedDevices = devices
+                self.cachedHosts = hostsByDevice
+                self.defaults.applyFallbacks(from: devices)
             }
         }
     }
@@ -395,7 +421,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func currentLocalTarget() -> String? {
         let selected = defaults.selectedDevices(from: cachedDevices)
-        guard selected.count == 2 else { return nil }
+        guard selected.count == 2, selected.allSatisfy(\.connected) else { return nil }
+        if defaults.mqtt.isUsable { return defaults.mqtt.computerName }
         let connected = selected.compactMap { device in cachedHosts[device.id]?.first(where: \.connected)?.name }
         guard connected.count == 2,
               connected[0].compare(connected[1], options: .caseInsensitive) == .orderedSame else { return nil }

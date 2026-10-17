@@ -14,4 +14,8 @@ struct LogiAgent: Sendable {
     func switchDevice(_ device: LogiDevice, to host: LogiHost) throws {
         try HIDPPTransport().switchDevice(device, to: host.index)
     }
+
+    func switchDevices(_ targets: [(LogiDevice, LogiHost)]) throws {
+        try HIDPPTransport().switchDevices(targets.map { ($0.0, $0.1.index) })
+    }
 }
