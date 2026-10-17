@@ -59,26 +59,24 @@ final class USBTriggerMonitor {
     var onConnect: (() -> Void)?
     private var configuration = USBTriggerConfiguration()
     private var wasPresent = false
-    private var timer: Timer?
+    private var notificationPort: IONotificationPortRef?
+    private var addedIterator: io_iterator_t = 0
+    private var removedIterator: io_iterator_t = 0
 
     func configure(_ configuration: USBTriggerConfiguration) {
         guard configuration != self.configuration else { return }
         self.configuration = configuration
         wasPresent = isPresent(configuration.deviceID)
-        timer?.invalidate()
-        timer = nil
+        stopNotifications()
         guard configuration.isUsable else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 0.75, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.poll() }
-        }
+        startNotifications()
     }
 
     func stop() {
-        timer?.invalidate()
-        timer = nil
+        stopNotifications()
     }
 
-    private func poll() {
+    fileprivate func registryChanged() {
         let present = isPresent(configuration.deviceID)
         if present && !wasPresent { onConnect?() }
         wasPresent = present
@@ -86,5 +84,66 @@ final class USBTriggerMonitor {
 
     private func isPresent(_ id: String) -> Bool {
         USBDeviceDiscovery.devices().contains { $0.id == id }
+    }
+
+    private func startNotifications() {
+        guard let port = IONotificationPortCreate(kIOMainPortDefault) else { return }
+        notificationPort = port
+        IONotificationPortSetDispatchQueue(port, DispatchQueue.main)
+        let context = Unmanaged.passUnretained(self).toOpaque()
+
+        let addedResult = IOServiceAddMatchingNotification(
+            port,
+            kIOFirstMatchNotification,
+            IOServiceMatching("IOUSBHostDevice"),
+            usbRegistryNotification,
+            context,
+            &addedIterator
+        )
+        if addedResult == KERN_SUCCESS { drainUSBIterator(addedIterator) }
+
+        let removedResult = IOServiceAddMatchingNotification(
+            port,
+            kIOTerminatedNotification,
+            IOServiceMatching("IOUSBHostDevice"),
+            usbRegistryNotification,
+            context,
+            &removedIterator
+        )
+        if removedResult == KERN_SUCCESS { drainUSBIterator(removedIterator) }
+    }
+
+    private func stopNotifications() {
+        if addedIterator != 0 {
+            IOObjectRelease(addedIterator)
+            addedIterator = 0
+        }
+        if removedIterator != 0 {
+            IOObjectRelease(removedIterator)
+            removedIterator = 0
+        }
+        if let notificationPort {
+            IONotificationPortDestroy(notificationPort)
+            self.notificationPort = nil
+        }
+    }
+}
+
+private func drainUSBIterator(_ iterator: io_iterator_t) {
+    while true {
+        let service = IOIteratorNext(iterator)
+        guard service != 0 else { return }
+        IOObjectRelease(service)
+    }
+}
+
+private let usbRegistryNotification: IOServiceMatchingCallback = { context, iterator in
+    drainUSBIterator(iterator)
+    guard let context else { return }
+    let monitor = Unmanaged<USBTriggerMonitor>.fromOpaque(context).takeUnretainedValue()
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+        MainActor.assumeIsolated {
+            monitor.registryChanged()
+        }
     }
 }
