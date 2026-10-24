@@ -29,16 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         mqtt.onTargetRequested = { [weak self] target in
             guard let self else { return }
             let machine = self.defaults.machineName(matchingDisplayName: target) ?? target
-            let thisComputer = self.defaults.displayName(for: self.defaults.mqtt.computerName)
-            if self.mqtt.isLocalOwner(thisComputer) {
-                let selected = self.defaults.selectedDevices(from: self.cachedDevices)
-                if selected.count == 2 {
-                    self.switchDevices(selected, targetName: machine)
-                    return
-                }
-            }
-            // A Mac that may have just received the devices still probes so it
-            // can take ownership even if its cache has not refreshed yet.
+            // A split pair has no single owner. Probe this Mac on every
+            // request so whichever selected devices are here can participate.
             self.loadDevices(requestedTarget: machine)
         }
         mqtt.onStateChanged = { [weak self] in
@@ -128,6 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.defaults.applyFallbacks(from: devices)
                     let hostNames = hostsByDevice.values.flatMap { $0.map(\.name) }
                     self.defaults.rememberMachineNames(hostNames)
+                    self.installHotkeys()
                     self.configureMQTT()
                     if let current = self.currentLocalTarget() {
                         self.mqtt.publishCurrentTarget(self.defaults.displayName(for: current))
@@ -136,7 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     }
                     if let requestedTarget {
                         let selected = self.defaults.selectedDevices(from: devices)
-                        if selected.count == 2 { self.switchDevices(selected, targetName: requestedTarget) }
+                        if !selected.isEmpty { self.switchDevices(selected, targetName: requestedTarget) }
                     }
                     if self.isMenuOpen {
                         self.updateVisibleMenuState()
@@ -206,7 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         } else if optionMode {
             buildPerDeviceMenu(cachedDevices.filter(\.isAvailable))
-        } else if selected.count == 2 {
+        } else if !selected.isEmpty {
             buildCommonTargetsMenu(for: selected)
         } else if defaults.mqtt.isUsable, defaults.knownMachineNames.contains(where: defaults.isMachineVisible) {
             buildNetworkTargetsMenu()
@@ -290,8 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             return
         }
-        let devices = defaults.selectedDevices(from: cachedDevices)
-        switchDevices(devices, targetName: targetName)
+        loadDevices(requestedTarget: targetName)
     }
 
     @objc private func switchSingleDevice(_ sender: NSMenuItem) {
@@ -359,10 +351,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             for device in devices {
                 hostsByDevice[device.id] = (try? LogiAgent().hosts(for: device)) ?? []
             }
-            await MainActor.run {
+            await MainActor.run { [hostsByDevice] in
                 self.cachedDevices = devices
                 self.cachedHosts = hostsByDevice
                 self.defaults.applyFallbacks(from: devices)
+                self.installHotkeys()
             }
         }
     }
@@ -379,7 +372,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.configureMQTT()
             self?.configureUSBTrigger()
             self?.refreshMenu()
-        }, targets: targets, machineNames: machineNames, usbDevices: USBDeviceDiscovery.devices()))
+        }, targets: targets, machineNames: machineNames))
         let window = NSWindow(contentViewController: controller)
         window.title = "Logi Easy Switch Settings"
         window.styleMask = [.titled, .closable]
@@ -425,10 +418,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let pairs = cachedDevices.map { ($0, cachedHosts[$0.id] ?? []) }
         let selected = defaults.selectedDevices(from: cachedDevices)
         let selectedHosts = selected.compactMap { device in pairs.first(where: { $0.0.id == device.id })?.1 }
-        if selectedHosts.count == 2 {
-            for host in selectedHosts[0] where selectedHosts[1].contains(where: { $0.name == host.name }) {
-                results.append(ShortcutTarget(id: "default:\(host.name)", label: "Default pair → \(host.name)", machineName: host.name))
-            }
+        for target in commonTargets(selectedHosts) {
+            results.append(ShortcutTarget(id: "default:\(target.name)", label: "Default pair → \(target.name)", machineName: target.name))
+        }
+        for machine in defaults.knownMachineNames where !results.contains(where: { $0.id == "default:\(machine)" }) {
+            results.append(ShortcutTarget(id: "default:\(machine)", label: "Default pair → \(machine)", machineName: machine))
         }
         for (device, hosts) in pairs {
             for host in hosts {
@@ -473,7 +467,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let kind = parts.first else { return }
         if kind == "default", parts.count == 2 {
             if defaults.mqtt.isUsable, mqtt.requestTarget(defaults.displayName(for: parts[1])) { return }
-            switchDevices(defaults.selectedDevices(from: cachedDevices), targetName: parts[1])
+            loadDevices(requestedTarget: parts[1])
             return
         }
         if kind == "device", parts.count == 3, let channel = Int(parts[2]), let device = cachedDevices.first(where: { $0.id == parts[1] }) {

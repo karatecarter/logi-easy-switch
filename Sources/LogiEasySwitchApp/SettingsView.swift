@@ -137,7 +137,7 @@ struct SettingsView: View {
     let didSave: () -> Void
     let targets: [ShortcutTarget]
     let machineNames: [String]
-    let usbDevices: [USBDeviceDescriptor]
+    @State private var usbDevices: [USBDeviceDescriptor] = []
 
     @State private var mouseID = ""
     @State private var keyboardID = ""
@@ -317,6 +317,18 @@ struct SettingsView: View {
             }
         }
         .padding(20)
+        }
+        .task {
+            // The settings window is reused after closing. Keep its device list
+            // current without rebuilding the view and losing in-progress edits.
+            while !Task.isCancelled {
+                usbDevices = USBDeviceDiscovery.devices()
+                do { try await Task.sleep(for: .seconds(2)) }
+                catch { return }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            usbDevices = USBDeviceDiscovery.devices()
         }
         .onAppear {
             defaults.applyFallbacks(from: devices)
