@@ -198,20 +198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func rebuildMenu() {
         menu.removeAllItems()
-        let launcher = NSMenuItem(title: "Show Shortcuts", action: #selector(showDeck), keyEquivalent: "")
-        launcher.target = self
-        menu.addItem(launcher)
-        let deckSettings = NSMenuItem(title: "Shortcuts Settings…", action: #selector(openDeckSettings), keyEquivalent: "")
-        deckSettings.target = self
-        menu.addItem(deckSettings)
-        menu.addItem(.separator())
         let selected = defaults.selectedDevices(from: cachedDevices)
-        if defaults.mqtt.enabled {
-            let status = NSMenuItem(title: "Home Assistant: \(mqtt.state.label)", action: nil, keyEquivalent: "")
-            status.isEnabled = false
-            menu.addItem(status)
-            menu.addItem(.separator())
-        }
         if let deviceLoadError, cachedDevices.isEmpty {
             if defaults.mqtt.isUsable, defaults.knownMachineNames.contains(where: defaults.isMachineVisible) {
                 buildNetworkTargetsMenu()
@@ -235,9 +222,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(withTitle: "Choose a default mouse and keyboard in Settings", action: nil, keyEquivalent: "")
         }
         menu.addItem(.separator())
+        let launcher = NSMenuItem(title: "Show Shortcuts", action: #selector(showDeck), keyEquivalent: "")
+        launcher.target = self
+        menu.addItem(launcher)
+        menu.addItem(.separator())
         let settings = NSMenuItem(title: "S\u{0435}ttings…", action: #selector(openSettings), keyEquivalent: "")
         settings.target = self
         menu.addItem(settings)
+        let deckSettings = NSMenuItem(title: "Shortcuts Settings…", action: #selector(openDeckSettings), keyEquivalent: "")
+        deckSettings.target = self
+        menu.addItem(deckSettings)
         let refresh = NSMenuItem(title: "Refresh", action: #selector(refreshMenuFromAction), keyEquivalent: "")
         refresh.target = self
         menu.addItem(refresh)

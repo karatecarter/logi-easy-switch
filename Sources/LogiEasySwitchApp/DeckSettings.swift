@@ -92,22 +92,24 @@ struct DeckSettingsView: View {
             }
             Divider()
             HStack(alignment: .top, spacing: 16) {
-                VStack {
-                    List(selection: $selected) {
-                        ForEach(store.configuration.buttons) { button in
-                            Text(button.name).padding(.leading, button.parentID == nil ? 0 : 10).tag(button.id)
-                        }
-                    }.frame(width: 180)
+                VStack(alignment: .leading, spacing: 8) {
+                    DeckShortcutOutline(buttons: $store.configuration.buttons, selection: $selected, readOnly: sync.isReadOnly)
+                        .help("Drag between rows to reorder, or onto a folder to move inside. Double-click a folder to expand or collapse.")
                     HStack {
                         Menu("Add") {
                             Button("Shortcut") { addButton(kind: "application") }
+                            Button("Folder") { addButton(kind: "folder") }
                             Button("Multi-action button") { addButton(kind: "group") }
                             Button("Thermostat preset") {
-                                let buttons = DeckThermostatPreset.make()
+                                let buttons = DeckThermostatPreset.make(parentID: additionParent(kind: "group"))
                                 store.configuration.buttons.append(contentsOf: buttons)
                                 selected = buttons.first?.id
                             }
                         }
+                        .menuStyle(.borderlessButton)
+                        .frame(width: 70)
+                        .padding(.vertical, 3)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 5))
                         .disabled(sync.isReadOnly)
                         Button("Remove") { removeSelected() }.disabled(selected == nil || sync.isReadOnly)
                     }
@@ -115,16 +117,28 @@ struct DeckSettingsView: View {
                         Button("Move up") { move(-1) }.disabled(selected == nil || sync.isReadOnly)
                         Button("Move down") { move(1) }.disabled(selected == nil || sync.isReadOnly)
                     }
-                }
+                }.frame(width: 180, alignment: .topLeading)
                 ScrollView {
                     if let index = store.configuration.buttons.firstIndex(where: { $0.id == selected }) {
-                        editor(index).disabled(sync.isReadOnly)
+                        VStack(alignment: .leading, spacing: 12) {
+                            Toggle("Sync with group", isOn: Binding(get: { store.configuration.buttons[index].syncWithGroup ?? true }, set: { store.configuration.buttons[index].syncWithGroup = $0 }))
+                                .toggleStyle(.checkbox)
+                            if store.configuration.buttons[index].syncWithGroup != false && !DeckSyncScope.isShared(store.configuration.buttons[index], in: store.configuration) {
+                                Text("This shortcut stays local because its parent folder or multi-action button is not synced.").font(.caption).foregroundStyle(.secondary)
+                            } else if !DeckSyncScope.isShared(store.configuration.buttons[index], in: store.configuration) {
+                                Text("Local to this Mac. Local folders and multi-action buttons also keep their contents local.").font(.caption).foregroundStyle(.secondary)
+                            } else {
+                                Text("Uncheck to keep this shortcut on this Mac only. In Edit on any Mac mode, this also removes its shared copy from the group.").font(.caption).foregroundStyle(.secondary)
+                            }
+                            editor(index).disabled(sync.isReadOnly && DeckSyncScope.isShared(store.configuration.buttons[index], in: store.configuration))
+                        }.frame(maxWidth: .infinity, alignment: .leading)
                     } else { Text("Add a shortcut to begin.").foregroundStyle(.secondary) }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             Text("Settings save automatically. Keys only activate buttons in the current folder. Escape closes; Left Arrow or Delete goes back. Folder navigation never dismisses.").font(.caption).foregroundStyle(.secondary)
         }.padding(20).frame(minWidth: 800, minHeight: 650)
         .disclosureGroupStyle(DeckDisclosureStyle())
+        .textFieldStyle(.roundedBorder)
         .onAppear { token = DeckTokenStore.load() }
         .onDisappear { capture.stop() }
         .onChange(of: store.configuration.homeAssistantURL) { _, _ in connectionStatus = nil }
@@ -159,12 +173,13 @@ struct DeckSettingsView: View {
             Picker("Type", selection: button.kind) { ForEach(Array(zip(kinds, names)), id: \.0) { Text($0.1).tag($0.0) } }
                 .disabled(store.configuration.buttons.contains { $0.parentID == selected })
                 .help("Remove or move a folder’s children before changing its type.")
+                .pickerStyle(.menu).fixedSize(horizontal: true, vertical: false)
             if button.wrappedValue.kind == "application" { DeckApplicationEditor(button: button) }
             if button.wrappedValue.kind == "url" { field("URL", "url", index) }
             Picker("Folder / multi-action button", selection: button.parentID) {
                 Text("Top level").tag(nil as UUID?)
                 ForEach(store.configuration.buttons.filter { ($0.kind == "folder" || ($0.kind == "group" && button.wrappedValue.kind != "group")) && !descendants(of: selected).contains($0.id) && $0.id != selected }) { folder in Text(folder.name).tag(Optional(folder.id)) }
-            }
+            }.pickerStyle(.menu).fixedSize(horizontal: true, vertical: false)
             if button.wrappedValue.kind != "group" {
                 Button("Button key: \(button.wrappedValue.key?.displayLabel ?? "None")") {
                     let id = button.wrappedValue.id
@@ -207,6 +222,7 @@ struct DeckSettingsView: View {
             }
             if button.wrappedValue.kind != "folder" && button.wrappedValue.kind != "group" {
                 Picker("Auto-dismiss behavior", selection: button.dismiss) { ForEach(DeckDismiss.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
+                    .pickerStyle(.menu).fixedSize(horizontal: true, vertical: false)
                 if button.wrappedValue.dismiss == .always {
                     HStack {
                         Text("Auto-dismiss delay")
@@ -244,9 +260,17 @@ struct DeckSettingsView: View {
         while changed { let before = result; for button in store.configuration.buttons where button.parentID.map({ result.contains($0) }) == true { result.insert(button.id) }; changed = before != result }
         return result
     }
+    private func additionParent(kind: String) -> UUID? {
+        guard let item = store.configuration.buttons.first(where: { $0.id == selected }) else { return nil }
+        let parent = DeckShortcutTree.isContainer(item) ? item.id : item.parentID
+        if kind == "group", let owner = store.configuration.buttons.first(where: { $0.id == parent }), owner.kind == "group" { return owner.parentID }
+        return parent
+    }
     private func addButton(kind: String) {
         var button = DeckButton()
         button.kind = kind
+        button.parentID = additionParent(kind: kind)
+        if kind == "folder" { button.name = "New folder" }
         if kind == "group" { button.name = "Multi-action button" }
         store.configuration.buttons.append(button)
         selected = button.id

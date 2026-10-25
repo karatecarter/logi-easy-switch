@@ -8,7 +8,8 @@ struct DeckSharedConfiguration: Codable, Equatable {
     var dismissAfterOpening: Bool?
 
     init(_ configuration: DeckConfiguration) {
-        buttons = configuration.migratingThermostatTicks().buttons.map { button in
+        let migrated = configuration.migratingThermostatTicks()
+        buttons = migrated.buttons.filter { DeckSyncScope.isShared($0, in: migrated) }.map { button in
             var shared = button
             shared.settings.removeValue(forKey: "path")
             shared.settings.removeValue(forKey: "interpreter")
@@ -23,13 +24,27 @@ struct DeckSharedConfiguration: Codable, Equatable {
     func applying(to local: DeckConfiguration) -> DeckConfiguration {
         var result = local
         let existing = Dictionary(local.buttons.map { ($0.id, $0.settings) }, uniquingKeysWith: { first, _ in first })
-        result.buttons = buttons.map { button in
+        let localButtons = local.buttons.filter { !DeckSyncScope.isShared($0, in: local) }
+        let localIDs = Set(localButtons.map(\.id))
+        result.buttons = buttons.filter { !localIDs.contains($0.id) }.map { button in
             var merged = button
             for key in ["path", "interpreter", "filePath"] {
                 merged.settings.removeValue(forKey: key)
                 if let value = existing[button.id]?[key] { merged.settings[key] = value }
             }
             return merged
+        }
+        for button in localButtons {
+            let originalIndex = local.buttons.firstIndex { $0.id == button.id } ?? result.buttons.count
+            result.buttons.insert(button, at: min(originalIndex, result.buttons.count))
+        }
+        let owners = Set(result.buttons.filter { ["folder", "group"].contains($0.kind) }.map(\.id))
+        for index in result.buttons.indices where localIDs.contains(result.buttons[index].id) {
+            if let parent = result.buttons[index].parentID, !owners.contains(parent) {
+                result.buttons[index].parentID = nil
+                // Preserve locality even if its formerly local parent was removed.
+                result.buttons[index].syncWithGroup = false
+            }
         }
         result.dismissAfterAction = dismissAfterAction
         result.actionDelay = actionDelay
@@ -85,6 +100,7 @@ struct DeckSyncSettings: Codable, Equatable {
     private(set) var sharedDocument: DeckSharedDocument?
     private var activeSharedKey: String?
     private var applyingRemote = false
+    private var lastObservedShared: DeckSharedConfiguration?
     private var sharedAssembler = DeckSyncAssembler()
     var isReadOnly: Bool { isFollower || (settings.role == .collaborative && !sharedReady) }
     let publisherID: String
@@ -248,6 +264,7 @@ struct DeckSyncSettings: Codable, Equatable {
         if let document = sharedDocument, (try? document.validate()) == nil { sharedDocument = nil }
         sharedReady = sharedDocument?.records["globals"] != nil
         sharedConflicts = sharedDocument?.conflicts ?? []
+        lastObservedShared = sharedReady ? DeckSharedConfiguration(store.configuration) : nil
     }
     private func persistShared(_ document: DeckSharedDocument) throws {
         let data = try JSONEncoder().encode(document)
@@ -271,7 +288,9 @@ struct DeckSyncSettings: Codable, Equatable {
         guard settings.role == .collaborative, var document = sharedDocument, sharedReady else { return }
         do {
             let before = document
-            try document.edit(from: document.materialized(), to: DeckSharedConfiguration(store.configuration), writer: publisherID, device: broker.computerName)
+            let updated = DeckSharedConfiguration(store.configuration)
+            try document.edit(from: lastObservedShared ?? document.materialized(), to: updated, writer: publisherID, device: broker.computerName)
+            lastObservedShared = updated
             guard before != document else { return }
             try persistShared(document) // Persist edits immediately, including while offline.
             pendingPublish?.cancel()
@@ -330,6 +349,7 @@ struct DeckSyncSettings: Codable, Equatable {
             try persistShared(merged)
             applyingRemote = true
             store.configuration = configuration
+            lastObservedShared = DeckSharedConfiguration(configuration)
             applyingRemote = false
             status = sharedConflicts.isEmpty ? "Shared shortcuts are up to date." : "Concurrent edits need review (\(sharedConflicts.count))."
             // Publish the merged state on this peer's own retained topic, never overwrite another peer.
@@ -349,6 +369,7 @@ struct DeckSyncSettings: Codable, Equatable {
             try persistShared(document)
             applyingRemote = true
             store.configuration = configuration
+            lastObservedShared = DeckSharedConfiguration(configuration)
             applyingRemote = false
             publishShared()
         } catch { status = error.localizedDescription }

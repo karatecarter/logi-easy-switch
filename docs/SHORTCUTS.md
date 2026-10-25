@@ -6,6 +6,10 @@ Clicking outside the launcher dismisses it without consuming the click or restor
 
 ## Configuration
 
+The settings sidebar groups shortcuts beneath their parent folders and multi-action buttons. Containers start collapsed. Long names wrap onto multiple lines and row heights grow to fit; the outline stays within its scroll viewport so selection highlights remain fully visible. Use a disclosure arrow, double-click, or the native left/right arrow keys to expand/collapse them. Drag between rows to reorder siblings, drag onto a folder or multi-action button to move inside, or drop between top-level rows to move back to the top level. Moves preserve folder contents and reject cycles or invalid nesting. Expansion stays local to the settings window and survives incoming refreshes. Selecting a child through an editor reveals its ancestors automatically.
+
+The Add menu has a visible button background and includes Shortcut, Folder, Multi-action button and Thermostat preset. Add creates the item in the selected folder (or beside the selected shortcut), with a guard against directly nesting multi-action buttons.
+
 - Each button has a name, a searchable visual icon picker, physical key binding (optionally modified), type, folder and dismissal rule. Record numpad 1 to distinguish it from the top-row 1. Bindings only apply to the current folder while the launcher has keyboard focus. Duplicate bindings produce a visible error rather than executing multiple actions.
 - Add a Folder button, then assign other buttons to it. Nested folders are supported. The picker prevents cycles; a folder with children must be emptied before changing its type. Removing a folder removes its contents. Move up/down reorders buttons within a folder.
 - Escape closes the launcher; Left Arrow or Delete goes to the parent folder. Folder navigation uses a short slide-and-fade transition, reversing direction for Back and automatic returns. Reduce Motion disables the sliding animation. Clicking a button and pressing its assigned key have the same behavior. Opening always starts at the top level. Closing restores the previously active app if the launcher still has focus.
@@ -114,6 +118,12 @@ The preset's +/− controls immediately preview one step per tap while accumulat
 The first temperature comes from `current_temperature`, the mode from the climate entity's state, and the setpoint from `temperature`. A low/high range is shown when the device supplies range targets instead of a single setpoint; missing values use an em dash. You can edit the generated template to change formatting. Choosing another thermostat regenerates it and updates the mode targets. Mode actions refuse to run until an entity has been selected.
 
 Multi-action buttons use ordinary child buttons, so their action settings, persistence, deletion, reordering, folder navigation and provider behavior remain shared with existing shortcuts.
+
+## Per-shortcut sync
+
+Each shortcut has a **Sync with group** checkbox, enabled by default (including existing shortcuts). Uncheck it to keep the shortcut and its icon/action data local to that Mac. The sidebar uses each shortcut’s configured symbol, image, favicon or file/application icon. Local rows show a separate crossed-out cloud badge without replacing the shortcut icon. Local folders and multi-action buttons keep all descendants local, even when a child's own checkbox is enabled; the editor explains this inherited setting.
+
+Incoming sync preserves local shortcuts and their settings. If a shared parent disappears, an independently local child is moved to the top level so it remains reachable. Local-only edits do not generate shared changes. In Edit on any Mac mode, changing an existing shared shortcut to local removes its shared copy from the group while retaining your local copy; rechecking publishes it again. Previously shared content may still exist in backups or on offline Macs until they sync. Legacy read-only followers can opt out of incoming changes locally, but do not publish deletions to the source.
 
 ## MQTT configuration sync
 

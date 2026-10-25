@@ -12,6 +12,7 @@ struct DeckButton: Codable, Identifiable, Equatable {
     var dismiss = DeckDismiss.inherit
     var delay: Double = 0
     var returnAfterAction: DeckReturnBehavior?
+    var syncWithGroup: Bool?
 }
 
 struct DeckReturnBehavior: Codable, Equatable {

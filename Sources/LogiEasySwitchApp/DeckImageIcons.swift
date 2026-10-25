@@ -44,6 +44,21 @@ enum DeckImageIcons {
         }
         throw DeckError.message("Could not convert this image into an icon. Try PNG or JPEG.")
     }
+    static func symbol(_ button: DeckButton, presentation: DeckPresentation? = nil) -> String {
+        if let icon = presentation?.icon { return icon }
+        if DeckHATarget.automaticLight(button) { return "lightbulb" }
+        if button.icon != "square.grid.2x2" { return button.icon }
+        switch button.kind {
+        case "microphone": return "mic"
+        case "camera": return "video"
+        case "volumeUp", "volumeDown", "volumeMute": return "speaker.wave.2"
+        case "folder": return "folder"
+        case "logi": return "keyboard"
+        case "application": return "doc"
+        case "url": return "globe"
+        default: return button.icon
+        }
+    }
     static func image(_ button: DeckButton) -> NSImage? {
         switch button.settings["iconSource"] {
         case "image", "favicon":
@@ -67,7 +82,7 @@ struct DeckButtonIcon: View {
             if let image = DeckImageIcons.image(button) {
                 Image(nsImage: image).resizable().scaledToFit().frame(width: size, height: size)
             } else {
-                Image(systemName: presentation?.icon ?? (DeckHATarget.automaticLight(button) ? "lightbulb" : button.icon))
+                Image(systemName: DeckImageIcons.symbol(button, presentation: presentation))
                     .font(.system(size: size))
                     .foregroundStyle(presentation?.highlighted == true ? Color.yellow : (presentation?.highlighted == false ? Color.secondary : Color.primary))
             }
@@ -97,7 +112,7 @@ struct DeckIconOptions: View {
                     Text("Custom image").tag("image")
                     if button.kind == "url" { Text("Favicon").tag("favicon") }
                     if button.kind == "application" { Text("File / application icon").tag("application") }
-                }.labelsHidden()
+                }.labelsHidden().pickerStyle(.menu).fixedSize(horizontal: true, vertical: false)
             }
             if button.settings["iconSource"] == "favicon" {
                 HStack {

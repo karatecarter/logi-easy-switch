@@ -54,7 +54,7 @@ struct DeckLogiEditor: View {
         VStack(alignment: .leading, spacing: 12) {
             Picker("Devices", selection: Binding(get: { button.settings["devices"] ?? "both" }, set: { button.settings["devices"] = $0 })) {
                 ForEach(DeckLogiScope.allCases, id: \.self) { Text($0.label).tag($0.rawValue) }
-            }
+            }.pickerStyle(.menu).fixedSize(horizontal: true, vertical: false)
             DeckSearchPicker(title: "Destination computer", selection: button.settings["destination"] ?? "", choices: service.destinations) { button.settings["destination"] = $0 }
             Text("Uses the default keyboard and mouse from the main Settings window. MQTT can request devices from another Mac; otherwise the selected devices must be connected here.").font(.caption).foregroundStyle(.secondary)
             if service.destinations.isEmpty { Text("Configure devices and remembered computers in the main Settings window first.").font(.caption).foregroundStyle(.secondary) }
