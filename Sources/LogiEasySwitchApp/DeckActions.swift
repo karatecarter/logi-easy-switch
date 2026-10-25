@@ -1,14 +1,17 @@
 import Foundation
+import AppKit
 import CoreAudio
 import AudioToolbox
 import Darwin
 
 struct BuiltinDeckProvider: DeckActionProvider {
-    let kinds = ["group", "homeassistant", "shortcuts", "applescript", "python", "microphone", "camera", "volumeUp", "volumeDown", "volumeMute"]
+    let kinds = ["application", "url", "group", "homeassistant", "shortcuts", "applescript", "python", "microphone", "camera", "volumeUp", "volumeDown", "volumeMute"]
 
     func execute(_ button: DeckButton, configuration: DeckConfiguration) async throws {
         let value = button.settings
         switch button.kind {
+        case "application": try await DeckDesktopActions.launch(button)
+        case "url": try await DeckDesktopActions.openURL(button)
         case "homeassistant":
             guard value["requiresThermostat"] != "true" else { throw DeckError.message("Choose a thermostat entity in the parent button’s settings before setting its mode.") }
             let action = (value["action"] ?? "").split(separator: ".")

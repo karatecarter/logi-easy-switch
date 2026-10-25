@@ -1,12 +1,14 @@
 # Shortcut launcher
 
-The shortcut launcher shares the existing menu bar app, with independent configuration and no dependency on Logitech devices or MQTT. Open **Shortcuts Settings…** in the menu bar, add buttons, and record a launcher hotkey. **Show Shortcuts** opens the same borderless floating panel. The hotkey toggles it.
+The shortcut launcher shares the existing menu bar app, with independent configuration and no dependency on Logitech devices or MQTT. Open **Shortcuts Settings…** in the menu bar, add buttons, and record a launcher hotkey. **Show Shortcuts** opens the same borderless floating panel. The hotkey toggles it. The launcher measures its tiles and expands vertically first, then adds columns and grows wider only if the content exceeds the usable screen height. Resizing stays centered on that screen and animates with folder entry, Back and automatic return. It respects the menu bar/Dock area; scrolling remains available only when even the widest screen-fitting layout cannot show everything. Image, favicon and file/application icons fill the space above a bottom-aligned label while retaining the ordinary tile height.
+
+Clicking outside the launcher dismisses it without consuming the click or restoring focus away from the clicked app. This includes clicks in other Switchboard windows and in other apps.
 
 ## Configuration
 
 - Each button has a name, a searchable visual icon picker, physical key binding (optionally modified), type, folder and dismissal rule. Record numpad 1 to distinguish it from the top-row 1. Bindings only apply to the current folder while the launcher has keyboard focus. Duplicate bindings produce a visible error rather than executing multiple actions.
 - Add a Folder button, then assign other buttons to it. Nested folders are supported. The picker prevents cycles; a folder with children must be emptied before changing its type. Removing a folder removes its contents. Move up/down reorders buttons within a folder.
-- Escape closes the launcher; Delete goes to the parent folder. Clicking a button and pressing its assigned key have the same behavior. Opening always starts at the top level. Closing restores the previously active app if the launcher still has focus.
+- Escape closes the launcher; Left Arrow or Delete goes to the parent folder. Folder navigation uses a short slide-and-fade transition, reversing direction for Back and automatic returns. Reduce Motion disables the sliding animation. Clicking a button and pressing its assigned key have the same behavior. Opening always starts at the top level. Closing restores the previously active app if the launcher still has focus.
 - The launcher hotkey requires a modifier. If it conflicts with a device-switching binding, the launcher takes priority. macOS registration failures appear in Shortcuts Settings. Delete clears a recorded binding; Escape cancels recording.
 
 Settings save automatically under the separate `shortcutDeck.v1` defaults key. Home Assistant access tokens are stored in Keychain; scripts and action parameters are stored as ordinary settings. Don't put secrets in script source or JSON if you can retrieve them from a credential store instead.
@@ -29,7 +31,31 @@ An action cancels the current timeout while it runs. Failures stay visible for i
 
 The launcher shows a countdown progress bar whenever an opening timeout, after-action dismissal, or folder-return timer is active. It drains as the timer runs and shows the remaining seconds plus **Auto-dismiss** or **Return to [folder]**. Cancelling or replacing the timer clears or resets the bar. The display uses the same monotonic deadline as the timer.
 
+## Keychain prompts during development
+
+The MQTT broker password and Home Assistant token are separate Keychain items. The app caches each credential in memory for the current process, shares it between settings and runtime operations, and avoids writing an unchanged credential back to Keychain. A denied read is remembered for that session so background refreshes cannot repeatedly prompt. Use **Reload password from Keychain** or **Reload token from Keychain** to explicitly retry. Loading a password into settings does not save or delete it.
+
+A new build may still require authorization for each item. The default ad-hoc signature identifies a particular build rather than a stable developer identity. Choose **Always Allow** for each credential if appropriate for your own build; this does not guarantee approval survives the next changed ad-hoc build. For durable identity across updates, build with an appropriate installed signing certificate using `LOGI_SIGNING_IDENTITY`. The build script's `tccutil` privacy reset is separate from Keychain item access control; it does not delete the stored credentials or reset their Keychain ACLs.
+
+## Icons
+
+The **Icon** selector offers **Symbol**, **Custom image**, **Favicon** for Open URL actions, and **File / application icon** for Open File actions. Symbol opens the searchable symbol grid. Custom image offers **Choose image file…** and **Paste image**; copy an image, screenshot or image file to the clipboard, then click Paste image. A preview shows the selected icon.
+
+Selecting **Favicon** starts downloading the website's icon immediately after a short debounce. It checks declared icon/touch-icon links and falls back to `/favicon.ico`, following redirects and trying supported raster icons. The normalized image is cached in the button, separately from custom images, so opening the launcher does not make another download and the icon works offline or on synced Macs. Use **Refresh favicon** to download again; changing the URL fetches a new icon. The app contacts the website and its declared icon hosts directly rather than using a third-party favicon lookup service. Only HTTP/HTTPS URLs are supported; errors appear inline and a symbol remains available as fallback. Source responses have bounded sizes and timeouts. Cached favicons count toward the MQTT configuration size limit.
+
+Imported images are normalized into PNG thumbnails of up to 128 pixels, preserving transparency. Source files are limited to 20 MB and 64 million pixels; stored thumbnails are bounded to 12 KB, downsizing further if necessary. Image bytes are embedded in the button so the original file is not needed after import and images travel through backups and MQTT sync. Embedded images count toward the existing 60 KB configuration sync limit. Explicit image/app icons take precedence over dynamic symbol icons. Application icons are resolved from the installed app on each Mac; that app must be installed there.
+
 ## Actions
+
+New shortcuts default to **Open File**, including shortcuts added inside folders and multi-action controls. The file chooser or URL field appears directly after Type. Single-line field labels sit beside their input.
+
+**Switch Logitech device:** Choose Keyboard, Mouse or Both (the default), then select a destination from the remembered, visible computer list. The action uses each Mac's default keyboard/mouse from main Settings. With MQTT enabled, Both uses the existing pair-switch command; keyboard-only and mouse-only requests use `<namespace>/command/devices` with JSON `{"target":"computer display name","devices":"keyboard"}` (or `mouse`). Update all participating Macs and allow this topic in broker ACLs for scoped switching. Retained commands, unknown destinations and invalid scopes are rejected. Sending a network request does not confirm physical completion. Without MQTT, the requested devices must be connected locally; every selected device's pairing is validated before switching, and the mouse moves before the keyboard for Both. Scope-specific requests do not announce that the entire pair moved.
+
+**Open File:** Choose this type and use **Choose file…** to select an app or document. Apps launch or activate through Launch Services; documents open in their default application. Existing Launch application shortcuts remain compatible under this new label. The icon selector's **File / application icon** uses the selected file's Finder icon.
+
+Selecting a `.webloc`, `.inetloc`, or Windows `.url` Internet Shortcut converts the action to **Open URL** using its stored destination. If it has a Finder custom icon (including one stored in its resource fork), that icon is rasterized and imported as **Custom image** automatically. After conversion, the original Internet Shortcut file is no longer required. Malformed shortcut files produce an error instead of silently opening a guessed address. Document paths remain local for MQTT sync; followers can select their own counterpart file in **Shortcut sync → Local file**. Application bundle IDs continue to resolve installed apps across Macs.
+
+**Open URL:** Choose this type and enter a full URL. Web URLs open in the default browser; application links such as `mailto:` use the registered handler. URLs are passed directly to Launch Services, without invoking a shell. Invalid URLs and missing handlers report errors.
 
 **Home Assistant:** Set the base URL and save a long-lived access token under Home Assistant connection. Use **Test Connection** to validate the current URL and token with an authenticated, read-only API status request. It does not run a shortcut or save the token; click **Save token to Keychain** to make an edited token available to launcher actions. Authentication failures, redirects and unexpected server responses appear inline. This uses REST and is separate from MQTT switching. Use HTTPS on remote networks; HTTP is available for local installations but transmits the token without encryption. Redirects are rejected to avoid forwarding credentials.
 
@@ -72,7 +98,7 @@ For the requested thermostat layout:
 
 1. Choose **Add → Thermostat preset**.
 2. Select your climate entity in **Thermostat** and the adjustment script in **Adjustment script**. The preset defaults to `script.adjust_thermostat`.
-3. The + control sends `{"incr":1}` and − sends `{"incr":-1}` directly to that script. Both default to Never dismiss, for repeated adjustments.
+3. The + control stores `{"increment":"ticks"}` and − stores `{"increment":"-ticks"}`. Taps accumulate separately for each control; one second after the last tap on that control, Switchboard calls the script once with the signed count as a JSON number. Three + taps send `{"increment":3}`; two − taps send `{"increment":-2}`. Each tap resets that control’s one-second timer. Other parameters are preserved, and existing numeric thermostat preset payloads migrate automatically. Both controls default to Never dismiss. Queued adjustments still run if you close or navigate away from the launcher, but their completion cannot dismiss or redirect a newer session. Quitting the app before the debounce expires does not persist the pending taps.
 4. Mode opens Cool, Heat, Auto and Off controls using `climate.set_hvac_mode`. Selecting the thermostat supplies their entity target. Edit these controls if your device uses different HVAC modes; Home Assistant's [climate action](https://www.home-assistant.io/actions/climate.set_hvac_mode/) accepts the device's supported mode names.
 5. Assign keys to +, −, Mode and its child shortcuts as desired. Each action retains its own dismissal settings.
 
@@ -83,11 +109,29 @@ Thermostat - 72
 Heat set to 74
 ```
 
+The preset's +/− controls immediately preview one step per tap while accumulating the outgoing count. **Updating setpoint…** identifies the unconfirmed preview. Existing controls created by the thermostat preset also get this behavior. The expected value stays visible while Home Assistant still reports the old setpoint; reported current temperature and mode continue to refresh. Confirmation clears the indicator, a failed action restores the latest reported text, and after ten seconds the reported value takes precedence even if different (for example, a device limit). The script still runs unchanged. This assumes one tick adjusts the setpoint by one displayed temperature unit; arbitrary custom template layouts and range setpoints are not guessed. The requested `… set to [number]` layout, with optional unit suffixes, is supported.
+
 The first temperature comes from `current_temperature`, the mode from the climate entity's state, and the setpoint from `temperature`. A low/high range is shown when the device supplies range targets instead of a single setpoint; missing values use an em dash. You can edit the generated template to change formatting. Choosing another thermostat regenerates it and updates the mode targets. Mode actions refuse to run until an entity has been selected.
 
 Multi-action buttons use ordinary child buttons, so their action settings, persistence, deletion, reordering, folder navigation and provider behavior remain shared with existing shortcuts.
 
 ## MQTT configuration sync
+
+**Edit on any Mac** supports shared editing and offline changes:
+
+1. On a Mac with the shortcuts you want to share, choose **Shortcut sync → Edit on any Mac → Create new group from this Mac**.
+2. Copy its **Shared group ID**. On other updated Macs, choose **Edit on any Mac** and paste that group ID. Use the same broker and namespace everywhere.
+3. A newly joining Mac waits for the group's first retained state before enabling shared editing, backing up its previous local configuration before replacement. Once initialized, each Mac can edit offline; edits are saved immediately and sent after reconnecting.
+
+Each Mac publishes its merged state to its own retained topic, `<namespace>/shortcuts/shared/<group-id>/<mac-sync-id>`, and subscribes to the group's `+` topic. Broker ACLs must allow each member to read all topics in its group and write its own topic. The group ID selects a shared space; broker authentication and ACLs establish trust. All members must use the updated app for this mode. The UI shows this Mac's sync ID for ACL configuration.
+
+Button changes use causal version vectors rather than wall-clock timestamps. Changes to different buttons merge automatically, including concurrent additions. Deletions retain tombstones so an offline peer cannot resurrect a deleted button with an older snapshot. Concurrent changes to the same button (including edit versus delete) preserve both versions and show a conflict picker in Shortcut sync. A stable provisional version is displayed in the launcher until you select which to keep. Resolving a conflict propagates to the group. Timer settings form one shared conflict unit. Concurrent ordering changes combine deterministically while retaining all live buttons. Children whose folders were concurrently deleted, or whose moves create a cycle, are promoted to top level to keep them reachable.
+
+Local-only settings and paths remain local, just as in Publish/Follow mode. Incoming changes and conflict resolutions are backed up. The existing 60 KB transport limit now includes version metadata and deletion history; oversized state reports an error instead of silently dropping updates. Turning sync Off stops sharing without deleting local shortcuts. Switching to another group can replace shared configuration, so use the export/backups controls when changing groups.
+
+To migrate an existing Publish/Follow setup, create a new shared group on the former publishing Mac, then move each follower to Edit on any Mac with that new group ID. Legacy modes remain supported and do not receive new shared-group edits.
+
+### Legacy one-way Publish/Follow
 
 Shortcut sync is optional and starts Off. It uses the TLS MQTT broker, credentials and namespace configured in the app's main **Settings** window, with a separate MQTT connection from device switching. Configure the same broker and namespace on participating Macs. No Logitech hardware is needed for shortcut sync, but the main MQTT setting must be enabled.
 
@@ -111,7 +155,7 @@ Before replacing a changed local configuration, the follower saves a JSON backup
 
 Snapshots use `<namespace>/shortcuts/config/<publisher-id>`. Restrict broker ACLs so only the editing Mac's account can write this topic, while followers can read it. The publisher ID selects a source; broker authentication and topic permissions establish trust. Received configuration is validated and does not execute actions on receipt. Shared script/state-template behavior still takes effect when you use the launcher, so only follow a trusted editing Mac.
 
-Configure broker persistence if retained snapshots must survive broker restarts. This uses the app's existing QoS 0 transport: the publisher's **Sent revision** status does not confirm broker storage or follower delivery; a follower's **Synced revision** confirms application on that Mac. Use **Reconnect** or **Publish now** if needed. Snapshots are limited to 60 KB and 500 buttons; oversized or malformed snapshots report errors. Only one designated editing Mac is supported per shared configuration; simultaneous edits from multiple publishers are not merged. Separate publisher IDs isolate their configurations.
+Configure broker persistence if retained snapshots must survive broker restarts. This uses the app's existing QoS 0 transport: the publisher's **Sent revision** status does not confirm broker storage or follower delivery; a follower's **Synced revision** confirms application on that Mac. Use **Reconnect** or **Publish now** if needed. Snapshots are limited to 60 KB and 500 buttons; oversized or malformed snapshots report errors. In legacy Publish/Follow mode, only one designated editing Mac is supported per shared configuration; use Edit on any Mac for multi-Mac editing. Separate publisher IDs isolate their configurations.
 
 Automated tests cover snapshot filtering/merging, invalid envelopes and folder cycles, follower revision handling, offline local persistence and backup failure protection. Actual broker ACLs, retained-message storage, reconnects and multi-Mac interaction require a live deployment smoke test.
 

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import QuartzCore
 
 private final class DeckPanel: NSPanel {
     override var canBecomeKey: Bool { true }
@@ -8,21 +9,38 @@ private final class DeckPanel: NSPanel {
 
 @MainActor final class DeckController: ObservableObject {
     let store: DeckStore
-    private let providers: [DeckActionProvider] = [BuiltinDeckProvider()]
+    private let providers: [DeckActionProvider]
     @Published var folder: UUID?
+    @Published private(set) var navigatingBack = false
+    @Published private(set) var columns = 3
     @Published var presentations: [UUID: DeckPresentation] = [:]
     @Published var error: String?
     @Published var running: UUID?
     @Published private(set) var countdown: DeckCountdown?
     private var panel: NSPanel?
     private var monitor: Any?
+    private var outsideClickMonitors: [Any] = []
     private var refreshTask: Task<Void, Never>?
     private var dismissTask: Task<Void, Never>?
     private var generation = UUID()
     private var navigationRevision = UUID()
+    private var thermostatPreview = DeckThermostatPreview()
+    private struct TickBatch {
+        var count: Int
+        var button: DeckButton
+        var preview: DeckThermostatPreview.Ticket?
+        var session: UUID
+        var navigation: UUID
+    }
+    @Published private(set) var pendingTickCounts: [UUID: Int] = [:]
+    private var tickBatches: [UUID: TickBatch] = [:]
+    private let tickDebouncer = DeckTickDebouncer()
     private weak var previousApp: NSRunningApplication?
     var visibleButtons: [DeckButton] { store.configuration.buttons.filter { $0.parentID == folder } }
-    init(store: DeckStore) { self.store = store }
+    init(store: DeckStore, logi: DeckLogiService? = nil) {
+        self.store = store
+        providers = [BuiltinDeckProvider()] + (logi.map { [DeckLogiProvider(service: $0)] } ?? [])
+    }
 
     func toggle() { if panel?.isVisible == true { hide() } else { show() } }
     func show() {
@@ -42,7 +60,8 @@ private final class DeckPanel: NSPanel {
         navigationRevision = UUID()
         error = nil
         generation = UUID()
-        panel?.center()
+        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+        resizeToFit(animated: false, on: screen)
         NSApp.activate(ignoringOtherApps: true)
         panel?.makeKeyAndOrderFront(nil)
         if let monitor { NSEvent.removeMonitor(monitor) }
@@ -50,12 +69,13 @@ private final class DeckPanel: NSPanel {
             guard let self, event.window === self.panel else { return event }
             guard !event.isARepeat else { return nil }
             if event.keyCode == 53 { self.hide(); return nil }
-            if event.keyCode == 51 { self.back(); return nil }
+            if event.keyCode == 51 || event.keyCode == 123 { self.back(); return nil }
             let matches = DeckGroups.activationTargets(in: self.folder, configuration: self.store.configuration).filter { $0.key?.keyCode == UInt32(event.keyCode) && $0.key?.modifiers == carbonModifiers(from: event.modifierFlags) }
             if matches.count == 1 { self.activate(matches[0]); return nil }
             if matches.count > 1 { self.error = "Multiple buttons use this key. Change their keys in settings."; return nil }
             return event
         }
+        installOutsideClickMonitors()
         armIdleTimeout()
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
@@ -66,19 +86,69 @@ private final class DeckPanel: NSPanel {
             }
         }
     }
-    func hide() {
+    private func installOutsideClickMonitors() {
+        outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }
+        outsideClickMonitors = []
+        let events: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        if let monitor = NSEvent.addGlobalMonitorForEvents(matching: events, handler: { [weak self] _ in
+            self?.hide(restoreFocus: false)
+        }) { outsideClickMonitors.append(monitor) }
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: events, handler: { [weak self] event in
+            guard let self, self.panel?.isVisible == true else { return event }
+            if event.window !== self.panel && !(self.panel?.childWindows?.contains(where: { $0 === event.window }) ?? false) {
+                self.hide(restoreFocus: false)
+            }
+            return event
+        }) { outsideClickMonitors.append(monitor) }
+    }
+    func hide(restoreFocus: Bool = true) {
+        outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }
+        outsideClickMonitors = []
         generation = UUID()
+        for (id, actual) in thermostatPreview.reset() {
+            presentations[id]?.text = actual
+            presentations[id]?.pendingSetpoint = false
+        }
         cancelTimer()
         refreshTask?.cancel()
         panel?.orderOut(nil)
         if let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }
-        if NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier { previousApp?.activate(options: []) }
+        if restoreFocus && NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier { previousApp?.activate(options: []) }
     }
     func back() {
         guard let folder else { return }
-        navigationRevision = UUID()
-        self.folder = DeckGroups.backDestination(from: folder, configuration: store.configuration)
+        navigate(to: DeckGroups.backDestination(from: folder, configuration: store.configuration), backwards: true)
         armIdleTimeout()
+    }
+    private func navigate(to destination: UUID?, backwards: Bool) {
+        navigationRevision = UUID()
+        guard folder != destination else { return }
+        navigatingBack = backwards
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            folder = destination
+        } else {
+            withAnimation(.easeInOut(duration: 0.22)) { folder = destination }
+        }
+        resizeToFit(animated: true)
+    }
+    func resizeToFit(animated: Bool, on screen: NSScreen? = nil) {
+        guard let panel, let screen = screen ?? panel.screen ?? NSScreen.main else { return }
+        let layout = DeckWindowLayout.fit(in: screen.visibleFrame) { count, width in
+            let view = NSHostingView(rootView: DeckView(controller: self, store: store, measuringColumns: count)
+                .frame(width: width).fixedSize(horizontal: false, vertical: true))
+            view.layoutSubtreeIfNeeded()
+            return view.fittingSize.height
+        }
+        if columns != layout.columns { columns = layout.columns }
+        guard abs(panel.frame.width - layout.frame.width) > 0.5 || abs(panel.frame.height - layout.frame.height) > 0.5 ||
+              abs(panel.frame.midX - layout.frame.midX) > 0.5 || abs(panel.frame.midY - layout.frame.midY) > 0.5 else { return }
+        if animated && panel.isVisible && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.22
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                panel.animator().setFrame(layout.frame, display: true)
+            }
+        } else { panel.setFrame(layout.frame, display: true) }
     }
     private func cancelTimer() {
         dismissTask?.cancel()
@@ -105,8 +175,7 @@ private final class DeckPanel: NSPanel {
         dismissTask = Task { [weak self] in
             do { try await ContinuousClock().sleep(until: timer.deadline) } catch { return }
             guard let self, self.generation == session, self.navigationRevision == navigation, self.panel?.isVisible == true else { return }
-            self.folder = DeckGroups.returnDestination(for: button, configuration: self.store.configuration)
-            self.navigationRevision = UUID()
+            self.navigate(to: DeckGroups.returnDestination(for: button, configuration: self.store.configuration), backwards: true)
             // Keep the returned folder visible rather than rearming the opening timeout.
             self.dismissTask = nil
             self.countdown = nil
@@ -118,15 +187,57 @@ private final class DeckPanel: NSPanel {
         if store.configuration.openingDismissEnabled { scheduleDismiss(store.configuration.idleTimeout) }
     }
     func activate(_ button: DeckButton) {
+        if DeckTicks.sign(button) != nil {
+            queueTicks(button)
+            return
+        }
         guard running == nil else { return }
+        execute(button)
+    }
+    private func queueTicks(_ button: DeckButton) {
+        cancelTimer()
+        error = nil
+        var batch = tickBatches[button.id] ?? TickBatch(count: 0, button: button, session: generation, navigation: navigationRevision)
+        guard batch.count < 10000 else { return }
+        batch.count += 1
+        if let groupID = button.parentID, let text = presentations[groupID]?.text,
+           let (ticket, preview) = thermostatPreview.begin(action: button, configuration: store.configuration, text: text) {
+            batch.preview = ticket
+            presentations[groupID]?.text = preview
+            presentations[groupID]?.pendingSetpoint = true
+        }
+        pendingTickCounts[button.id] = batch.count
+        tickBatches[button.id] = batch
+        tickDebouncer.schedule(button.id) { [weak self] in
+            guard let self else { return }
+            // Serialize against other actions without dropping a queued adjustment.
+            while self.running != nil {
+                do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
+            }
+            guard let ready = self.tickBatches.removeValue(forKey: button.id) else { return }
+            self.pendingTickCounts.removeValue(forKey: button.id)
+            do {
+                let resolved = try DeckTicks.resolved(ready.button, ticks: ready.count)
+                self.execute(resolved, previewTicket: ready.preview, previewAlreadyApplied: true, originSession: ready.session, originNavigation: ready.navigation)
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+    private func execute(_ button: DeckButton, previewTicket existingTicket: DeckThermostatPreview.Ticket? = nil, previewAlreadyApplied: Bool = false, originSession: UUID? = nil, originNavigation: UUID? = nil) {
         error = nil
         if button.kind == "group" { return }
-        if button.kind == "folder" { navigationRevision = UUID(); folder = button.id; armIdleTimeout(); return }
+        if button.kind == "folder" { navigate(to: button.id, backwards: false); armIdleTimeout(); return }
         cancelTimer()
         running = button.id
-        let session = generation
-        let navigation = navigationRevision
+        let session = originSession ?? generation
+        let navigation = originNavigation ?? navigationRevision
         let config = store.configuration
+        var previewTicket = existingTicket
+        if !previewAlreadyApplied, let groupID = button.parentID, let text = presentations[groupID]?.text,
+           let (ticket, preview) = thermostatPreview.begin(action: button, configuration: config, text: text) {
+            previewTicket = ticket
+            presentations[groupID]?.text = preview
+            presentations[groupID]?.pendingSetpoint = true
+        }
         Task {
             do {
                 guard let provider = providers.first(where: { $0.kinds.contains(button.kind) }) else { throw DeckError.message("No provider for \(button.kind).") }
@@ -142,7 +253,12 @@ private final class DeckPanel: NSPanel {
                 await refresh()
             } catch {
                 running = nil
-                guard generation == session, navigationRevision == navigation else { return }
+                guard generation == session else { return }
+                if let previewTicket, let actual = thermostatPreview.cancel(previewTicket) {
+                    presentations[previewTicket.groupID]?.text = actual
+                    presentations[previewTicket.groupID]?.pendingSetpoint = false
+                }
+                guard navigationRevision == navigation else { return }
                 self.error = error.localizedDescription
             }
         }
@@ -153,8 +269,11 @@ private final class DeckPanel: NSPanel {
             guard !Task.isCancelled, generation == session else { return }
             guard let provider = providers.first(where: { $0.kinds.contains(button.kind) }) else { continue }
             do {
-                let value = try await provider.presentation(button, configuration: store.configuration)
+                var value = try await provider.presentation(button, configuration: store.configuration)
                 guard generation == session, !Task.isCancelled else { return }
+                let resolved = thermostatPreview.reconcile(groupID: button.id, actual: value.text)
+                value.text = resolved.text
+                value.pendingSetpoint = resolved.pending
                 presentations[button.id] = value
             } catch {
                 presentations[button.id] = DeckPresentation(text: "Unavailable: \(error.localizedDescription)")
@@ -163,20 +282,59 @@ private final class DeckPanel: NSPanel {
     }
 }
 
-private struct DeckView: View {
+struct DeckView: View {
     @ObservedObject var controller: DeckController
     @ObservedObject var store: DeckStore
+    var measuringColumns: Int? = nil
+    private var columnCount: Int { measuringColumns ?? controller.columns }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var folderTransition: AnyTransition {
+        if reduceMotion { return .opacity }
+        return .asymmetric(
+            insertion: .move(edge: controller.navigatingBack ? .leading : .trailing).combined(with: .opacity),
+            removal: .move(edge: controller.navigatingBack ? .trailing : .leading).combined(with: .opacity))
+    }
     var body: some View {
         VStack(spacing: 16) {
             HStack {
-                if controller.folder != nil { Button { controller.back() } label: { Image(systemName: "chevron.left") }.help("Back (Delete)") }
+                if controller.folder != nil { Button { controller.back() } label: { Image(systemName: "chevron.left") }.help("Back (← or Delete)") }
                 Text(store.configuration.buttons.first(where: { $0.id == controller.folder })?.name ?? "Shortcuts").font(.title2.bold())
                 Spacer()
                 Button { controller.hide() } label: { Image(systemName: "xmark") }.help("Close (Escape)")
             }
-            if controller.visibleButtons.isEmpty { Text("Add shortcuts in Shortcuts Settings from the menu bar.").foregroundStyle(.secondary).frame(maxHeight: .infinity) }
+            ZStack {
+            if measuringColumns != nil {
+                iconGrid.fixedSize(horizontal: false, vertical: true)
+            } else {
             ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 170))], spacing: 12) {
+                iconGrid
+            }
+            .overlay {
+                if controller.visibleButtons.isEmpty {
+                    Text("Add shortcuts in Shortcuts Settings from the menu bar.").foregroundStyle(.secondary)
+                }
+            }
+            .id(controller.folder)
+            .transition(folderTransition)
+            }
+            }
+            .frame(maxWidth: .infinity, maxHeight: measuringColumns == nil ? .infinity : nil)
+            .clipped()
+            if let countdown = controller.countdown { DeckCountdownView(countdown: countdown) }
+            if let error = controller.error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+        }.padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .onChange(of: store.configuration) { _, _ in updateSize() }
+        .onChange(of: controller.presentations) { _, _ in updateSize() }
+        .onChange(of: controller.error) { _, _ in updateSize() }
+        .onChange(of: controller.countdown != nil) { _, _ in updateSize() }
+        .onChange(of: controller.pendingTickCounts) { _, _ in updateSize() }
+    }
+    private func updateSize() {
+        guard measuringColumns == nil else { return }
+        controller.resizeToFit(animated: true)
+    }
+    private var iconGrid: some View {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: columnCount), spacing: 12) {
                     ForEach(controller.visibleButtons) { button in
                         if button.kind == "group" {
                             VStack(spacing: 12) {
@@ -188,9 +346,12 @@ private struct DeckView: View {
                                         Button { controller.activate(control) } label: {
                                             VStack(spacing: 3) {
                                                 Text(control.name).font(.headline)
+                                                if let ticks = controller.pendingTickCounts[control.id] {
+                                                    Text("\(ticks) queued").font(.caption2).foregroundStyle(.secondary)
+                                                }
                                                 if let key = control.key { Text(key.displayLabel).font(.caption2.monospaced()).foregroundStyle(.secondary) }
                                             }.frame(maxWidth: .infinity, minHeight: 32)
-                                        }.disabled(controller.running != nil)
+                                        }.disabled(controller.running != nil && DeckTicks.sign(control) == nil)
                                         .help(control.kind == "folder" ? "Open \(control.name)" : control.name)
                                     }
                                 }
@@ -198,28 +359,54 @@ private struct DeckView: View {
                         } else {
                             Button { controller.activate(button) } label: {
                                 tileContent(button).frame(maxWidth: .infinity, minHeight: 110).padding(10)
-                            }.buttonStyle(.plain).background(.quaternary, in: RoundedRectangle(cornerRadius: 12)).disabled(controller.running != nil)
+                            }.buttonStyle(.plain).background(.quaternary, in: RoundedRectangle(cornerRadius: 12)).disabled(controller.running != nil && DeckTicks.sign(button) == nil)
                         }
                     }
                 }
-            }
-            if let countdown = controller.countdown { DeckCountdownView(countdown: countdown) }
-            if let error = controller.error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
-        }.padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+
     }
     private func tileContent(_ button: DeckButton) -> some View {
         let presentation = controller.presentations[button.id]
+        let realIcon = ["image", "favicon", "application"].contains(button.settings["iconSource"] ?? "")
         let replaceName = button.settings["textReplacesName"] == "true" && !(presentation?.text ?? "").isEmpty
-        return VStack(spacing: 8) {
-            if button.kind != "group" {
-                HStack { Spacer(); Text(button.key?.displayLabel ?? "").font(.caption.monospaced()).foregroundStyle(.secondary) }
+        return Group {
+            if realIcon {
+                VStack(spacing: 4) {
+                    GeometryReader { geometry in
+                        DeckButtonIcon(button: button, presentation: presentation, size: min(geometry.size.height, geometry.size.width))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    if !replaceName { Text(button.name).font(.headline).lineLimit(2) }
+                    if controller.running == button.id || !(presentation?.text ?? "").isEmpty {
+                        Text(controller.running == button.id ? "Running…" : presentation?.text ?? "")
+                            .font(replaceName ? .headline : .caption).lineLimit(3)
+                    }
+                    if presentation?.pendingSetpoint == true {
+                        Text("Updating setpoint…").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                .multilineTextAlignment(.center)
+                .frame(height: 110)
+                .overlay(alignment: .topTrailing) {
+                    if button.kind != "group" {
+                        Text(button.key?.displayLabel ?? "").font(.caption.monospaced()).foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                VStack(spacing: 8) {
+                    if button.kind != "group" {
+                        HStack { Spacer(); Text(button.key?.displayLabel ?? "").font(.caption.monospaced()).foregroundStyle(.secondary) }
+                    }
+                    DeckButtonIcon(button: button, presentation: presentation)
+                    if !replaceName { Text(button.name).font(.headline).lineLimit(2) }
+                    Text(controller.running == button.id ? "Running…" : presentation?.text ?? " ")
+                        .font(replaceName ? .headline : .caption)
+                        .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                    if presentation?.pendingSetpoint == true {
+                        Text("Updating setpoint…").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
             }
-            Image(systemName: presentation?.icon ?? (DeckHATarget.automaticLight(button) ? "lightbulb" : button.icon)).font(.system(size: 28))
-                .foregroundStyle(presentation?.highlighted == true ? Color.yellow : (presentation?.highlighted == false ? Color.secondary : Color.primary))
-            if !replaceName { Text(button.name).font(.headline).lineLimit(2) }
-            Text(controller.running == button.id ? "Running…" : presentation?.text ?? " ")
-                .font(replaceName ? .headline : .caption)
-                .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

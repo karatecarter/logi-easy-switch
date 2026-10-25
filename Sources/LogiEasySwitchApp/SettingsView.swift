@@ -219,7 +219,15 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     TextField("Username", text: $mqtt.username)
-                    SecureField("Password", text: $mqttPassword)
+                    SecureField("Password", text: Binding(get: { mqttPassword }, set: { value in
+                        mqttPassword = value
+                        do {
+                            try MQTTPasswordStore.save(value)
+                            mqttPasswordError = nil
+                            didSave()
+                        } catch { mqttPasswordError = error.localizedDescription }
+                    }))
+                    Button("Reload password from Keychain") { mqttPassword = MQTTPasswordStore.load(retry: true); didSave() }
                     if let mqttPasswordError {
                         Text(mqttPasswordError).foregroundStyle(.red)
                     }
@@ -368,15 +376,6 @@ struct SettingsView: View {
             defaults.mqtt = value
             defaults.save()
             didSave()
-        }
-        .onChange(of: mqttPassword) { _, value in
-            do {
-                try MQTTPasswordStore.save(value)
-                mqttPasswordError = nil
-                didSave()
-            } catch {
-                mqttPasswordError = error.localizedDescription
-            }
         }
         .onChange(of: usbTrigger.deviceID) { _, deviceID in
             if let device = usbDevices.first(where: { $0.id == deviceID }) {

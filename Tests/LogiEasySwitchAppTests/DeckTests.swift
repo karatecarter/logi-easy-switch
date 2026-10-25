@@ -123,9 +123,9 @@ final class DeckTests: XCTestCase {
         XCTAssertEqual(controls.map(\.name), ["+", "−", "Mode"])
         XCTAssertEqual(controls[0].settings["action"], "script.adjust_thermostat")
         for (index, increment) in [(0, 1), (1, -1)] {
-            let data = try DeckHomeAssistantClient.actionData(controls[index].settings["data"]!)
+            let data = try DeckHomeAssistantClient.actionData(DeckTicks.resolved(controls[index], ticks: 1).settings["data"]!)
             let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-            XCTAssertEqual(body["incr"] as? Int, increment)
+            XCTAssertEqual(body["increment"] as? Int, increment)
             XCTAssertEqual(controls[index].dismiss, .never)
         }
         XCTAssertEqual(controls[2].kind, "folder")
@@ -151,8 +151,8 @@ final class DeckTests: XCTestCase {
         let controls = DeckGroups.controls(updated, in: configuration)
         XCTAssertEqual(controls[0].settings["action"], "script.adjust_office")
         XCTAssertEqual(controls[1].settings["action"], "script.adjust_office")
-        XCTAssertEqual(controls[0].settings["data"], "{\"incr\":1}")
-        XCTAssertEqual(controls[1].settings["data"], "{\"incr\":-1}")
+        XCTAssertEqual(controls[0].settings["data"], "{\"increment\":\"ticks\"}")
+        XCTAssertEqual(controls[1].settings["data"], "{\"increment\":\"-ticks\"}")
         let decoded = try JSONDecoder().decode(DeckConfiguration.self, from: JSONEncoder().encode(configuration))
         XCTAssertEqual(decoded, configuration)
         XCTAssertThrowsError(try DeckThermostatPreset.configure(groupID: group.id, entity: "climate.bad'input", configuration: &configuration))

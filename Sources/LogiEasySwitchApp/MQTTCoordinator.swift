@@ -20,10 +20,12 @@ final class MQTTCoordinator: ObservableObject {
 
     @Published private(set) var state: State = .disabled
     @Published private(set) var currentTarget: String?
+    var onDeviceTargetRequested: ((DeckLogiRequest) -> Void)?
     var onTargetRequested: ((String) -> Void)?
     var onStateChanged: (() -> Void)?
 
     private var commandTopic: String { "\(configuration.topicPrefix)/command/target" }
+    private var deviceCommandTopic: String { "\(configuration.topicPrefix)/command/devices" }
     private var stateTopic: String { "\(configuration.topicPrefix)/state/current-target" }
     private var configuration = MQTTConfiguration()
     private var password = ""
@@ -70,6 +72,13 @@ final class MQTTCoordinator: ObservableObject {
         return true
     }
 
+    func requestDevices(_ request: DeckLogiRequest) -> Bool {
+        if request.devices == .both { return requestTarget(request.target) }
+        guard state == .connected, targets.contains(request.target), let data = try? JSONEncoder().encode(request) else { return false }
+        client?.publish(topic: deviceCommandTopic, payload: data)
+        return true
+    }
+
     func isLocalOwner(_ computer: String) -> Bool {
         localCurrentTarget?.compare(computer, options: .caseInsensitive) == .orderedSame
     }
@@ -113,6 +122,7 @@ final class MQTTCoordinator: ObservableObject {
                 self.state = .connected
                 self.reconnectDelay = 2
                 mqtt?.subscribe(self.commandTopic)
+                mqtt?.subscribe(self.deviceCommandTopic)
                 mqtt?.subscribe(self.stateTopic)
                 self.publishDiscovery()
                 self.publishMacAvailability(online: true)
@@ -122,7 +132,7 @@ final class MQTTCoordinator: ObservableObject {
                 self.onStateChanged?()
             }
         }
-        let subscribedTopics = [commandTopic, stateTopic]
+        let subscribedTopics = [commandTopic, deviceCommandTopic, stateTopic]
         mqtt.onMessage = { [weak self, weak mqtt] topic, payload, retained in
             guard subscribedTopics.contains(topic), payload.count <= 1_024 else { return }
             Task { @MainActor in
@@ -130,6 +140,10 @@ final class MQTTCoordinator: ObservableObject {
                 if topic == self.commandTopic,
                    let target = MQTTCommandPolicy.acceptedTarget(payload: payload, retained: retained, targets: self.targets) {
                     self.onTargetRequested?(target)
+                }
+                if topic == self.deviceCommandTopic,
+                   let request = DeckLogiRequest.accepted(payload: payload, retained: retained, targets: self.targets) {
+                    self.onDeviceTargetRequested?(request)
                 }
                 if topic == self.stateTopic {
                     self.currentTarget = value

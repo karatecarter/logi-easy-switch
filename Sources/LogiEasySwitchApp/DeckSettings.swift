@@ -28,6 +28,7 @@ import SwiftUI
 struct DeckSettingsView: View {
     @ObservedObject var store: DeckStore
     @ObservedObject var sync: DeckSyncCoordinator
+    let logi: DeckLogiService
     @State private var selected: UUID?
     @State private var token = ""
     @State private var message: String?
@@ -35,8 +36,8 @@ struct DeckSettingsView: View {
     @State private var connectionStatus: String?
     @State private var connectionSucceeded = false
     @StateObject private var capture = DeckKeyCapture()
-    private let kinds = ["group", "folder", "homeassistant", "shortcuts", "applescript", "python", "microphone", "camera", "volumeUp", "volumeDown", "volumeMute"]
-    private let names = ["Multi-action button", "Folder", "Home Assistant", "Apple Shortcuts", "AppleScript", "Python script", "Microphone mute", "Camera (app-specific)", "Volume up", "Volume down", "Speaker mute"]
+    private let kinds = ["logi", "application", "url", "group", "folder", "homeassistant", "shortcuts", "applescript", "python", "microphone", "camera", "volumeUp", "volumeDown", "volumeMute"]
+    private let names = ["Switch Logitech device", "Open File", "Open URL", "Multi-action button", "Folder", "Home Assistant", "Apple Shortcuts", "AppleScript", "Python script", "Microphone mute", "Camera (app-specific)", "Volume up", "Volume down", "Speaker mute"]
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -70,11 +71,12 @@ struct DeckSettingsView: View {
                     Text("seconds after an action by default")
                 }
             }
-            .disabled(sync.isFollower)
+            .disabled(sync.isReadOnly)
             DeckSyncView(sync: sync, store: store)
             DisclosureGroup("Home Assistant connection") {
                 TextField("Base URL, e.g. https://home.example.com", text: $store.configuration.homeAssistantURL)
                 SecureField("Long-lived access token", text: $token)
+                Button("Reload token from Keychain") { token = DeckTokenStore.load(retry: true) }
                 Button("Save token to Keychain") { do { try DeckTokenStore.save(token); message = "Token saved." } catch { message = error.localizedDescription } }
                 HStack {
                     Button(testingConnection ? "Testing…" : "Test Connection") { testHomeAssistantConnection() }
@@ -98,7 +100,7 @@ struct DeckSettingsView: View {
                     }.frame(width: 180)
                     HStack {
                         Menu("Add") {
-                            Button("Shortcut") { addButton(kind: "microphone") }
+                            Button("Shortcut") { addButton(kind: "application") }
                             Button("Multi-action button") { addButton(kind: "group") }
                             Button("Thermostat preset") {
                                 let buttons = DeckThermostatPreset.make()
@@ -106,28 +108,28 @@ struct DeckSettingsView: View {
                                 selected = buttons.first?.id
                             }
                         }
-                        .disabled(sync.isFollower)
-                        Button("Remove") { removeSelected() }.disabled(selected == nil || sync.isFollower)
+                        .disabled(sync.isReadOnly)
+                        Button("Remove") { removeSelected() }.disabled(selected == nil || sync.isReadOnly)
                     }
                     HStack {
-                        Button("Move up") { move(-1) }.disabled(selected == nil || sync.isFollower)
-                        Button("Move down") { move(1) }.disabled(selected == nil || sync.isFollower)
+                        Button("Move up") { move(-1) }.disabled(selected == nil || sync.isReadOnly)
+                        Button("Move down") { move(1) }.disabled(selected == nil || sync.isReadOnly)
                     }
                 }
                 ScrollView {
                     if let index = store.configuration.buttons.firstIndex(where: { $0.id == selected }) {
-                        editor(index).disabled(sync.isFollower)
+                        editor(index).disabled(sync.isReadOnly)
                     } else { Text("Add a shortcut to begin.").foregroundStyle(.secondary) }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            Text("Settings save automatically. Keys only activate buttons in the current folder. Escape closes; Delete goes back. Folder navigation never dismisses.").font(.caption).foregroundStyle(.secondary)
+            Text("Settings save automatically. Keys only activate buttons in the current folder. Escape closes; Left Arrow or Delete goes back. Folder navigation never dismisses.").font(.caption).foregroundStyle(.secondary)
         }.padding(20).frame(minWidth: 800, minHeight: 650)
         .disclosureGroupStyle(DeckDisclosureStyle())
         .onAppear { token = DeckTokenStore.load() }
         .onDisappear { capture.stop() }
         .onChange(of: store.configuration.homeAssistantURL) { _, _ in connectionStatus = nil }
         .onChange(of: token) { _, _ in connectionStatus = nil }
-        .onChange(of: sync.isFollower) { _, _ in capture.stop() }
+        .onChange(of: sync.isReadOnly) { _, _ in capture.stop() }
         .onChange(of: selected) { _, _ in capture.stop() }
     }
     private func testHomeAssistantConnection() {
@@ -157,6 +159,8 @@ struct DeckSettingsView: View {
             Picker("Type", selection: button.kind) { ForEach(Array(zip(kinds, names)), id: \.0) { Text($0.1).tag($0.0) } }
                 .disabled(store.configuration.buttons.contains { $0.parentID == selected })
                 .help("Remove or move a folder’s children before changing its type.")
+            if button.wrappedValue.kind == "application" { DeckApplicationEditor(button: button) }
+            if button.wrappedValue.kind == "url" { field("URL", "url", index) }
             Picker("Folder / multi-action button", selection: button.parentID) {
                 Text("Top level").tag(nil as UUID?)
                 ForEach(store.configuration.buttons.filter { ($0.kind == "folder" || ($0.kind == "group" && button.wrappedValue.kind != "group")) && !descendants(of: selected).contains($0.id) && $0.id != selected }) { folder in Text(folder.name).tag(Optional(folder.id)) }
@@ -171,11 +175,9 @@ struct DeckSettingsView: View {
                 if capture.recording { Text("Press a key (including numpad), Delete clears, Escape cancels.").font(.caption) }
                 if let key = button.wrappedValue.key, DeckGroups.keyPeers(for: button.wrappedValue, configuration: store.configuration).contains(where: { $0.id != button.wrappedValue.id && $0.key?.keyCode == key.keyCode && $0.key?.modifiers == key.modifiers }) { Text("Duplicate key in this folder; choose another key.").foregroundStyle(.red) }
             }
-            DeckIconPicker(icon: Binding(get: { button.wrappedValue.icon }, set: { value in
-                button.wrappedValue.icon = value
-                button.wrappedValue.settings["automaticLightIcon"] = "false"
-            }))
+            DeckIconOptions(button: button).id(button.wrappedValue.id)
             switch button.wrappedValue.kind {
+            case "logi": DeckLogiEditor(button: button, service: logi)
             case "folder":
                 ForEach(store.configuration.buttons.filter { $0.parentID == button.wrappedValue.id }) { child in
                     Button("Edit \(child.name)") { selected = child.id }
@@ -221,10 +223,18 @@ struct DeckSettingsView: View {
     }
     private func field(_ title: String, _ key: String, _ index: Int, multiline: Bool = false) -> some View {
         let binding = Binding<String>(get: { store.configuration.buttons.indices.contains(index) ? store.configuration.buttons[index].settings[key] ?? "" : "" }, set: { if store.configuration.buttons.indices.contains(index) { store.configuration.buttons[index].settings[key] = $0 } })
-        return VStack(alignment: .leading) {
-            Text(title).font(.caption)
-            if multiline { DeckCodeEditor(text: binding).frame(height: 70).border(.quaternary) }
-            else { TextField(title, text: binding) }
+        return Group {
+            if multiline {
+                VStack(alignment: .leading) {
+                    Text(title).font(.caption)
+                    DeckCodeEditor(text: binding).frame(height: 70).border(.quaternary)
+                }
+            } else {
+                HStack {
+                    Text(title)
+                    TextField("", text: binding).accessibilityLabel(title)
+                }
+            }
         }
     }
     private func descendants(of id: UUID?) -> Set<UUID> {

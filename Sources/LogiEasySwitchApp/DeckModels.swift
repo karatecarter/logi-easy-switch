@@ -7,7 +7,7 @@ struct DeckButton: Codable, Identifiable, Equatable {
     var name = "New shortcut"
     var key: Shortcut?
     var icon = "square.grid.2x2"
-    var kind = "microphone"
+    var kind = "application"
     var settings: [String: String] = [:]
     var dismiss = DeckDismiss.inherit
     var delay: Double = 0
@@ -55,7 +55,9 @@ struct DeckConfiguration: Codable, Equatable {
     private let defaults: UserDefaults
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        configuration = (try? JSONDecoder().decode(DeckConfiguration.self, from: defaults.data(forKey: "shortcutDeck.v1") ?? Data())) ?? DeckConfiguration()
+        let saved = (try? JSONDecoder().decode(DeckConfiguration.self, from: defaults.data(forKey: "shortcutDeck.v1") ?? Data())) ?? DeckConfiguration()
+        configuration = saved.migratingThermostatTicks()
+        if configuration != saved { save() }
     }
     private func save() {
         defaults.set(try? JSONEncoder().encode(configuration), forKey: "shortcutDeck.v1")
@@ -64,26 +66,34 @@ struct DeckConfiguration: Codable, Equatable {
 }
 
 enum DeckTokenStore {
-    static func load() -> String {
-        var result: CFTypeRef?
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "local.logi-easy-switch.deck", kSecAttrAccount as String: "ha-token", kSecReturnData as String: true]
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return "" }
-        return String(decoding: data, as: UTF8.self)
-    }
-    static func save(_ token: String) throws {
-        let key: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "local.logi-easy-switch.deck", kSecAttrAccount as String: "ha-token"]
-        var status: OSStatus
-        if token.isEmpty { status = SecItemDelete(key as CFDictionary) }
-        else {
-            status = SecItemUpdate(key as CFDictionary, [kSecValueData as String: Data(token.utf8)] as CFDictionary)
-            if status == errSecItemNotFound {
-                var item = key
-                item[kSecValueData as String] = Data(token.utf8)
-                item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-                status = SecItemAdd(item as CFDictionary, nil)
-            }
+    private static let cache = CredentialSessionCache()
+    static func load(retry: Bool = false) -> String {
+        cache.load(retry: retry) {
+            var result: CFTypeRef?
+            let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "local.logi-easy-switch.deck", kSecAttrAccount as String: "ha-token", kSecReturnData as String: true]
+            let status = SecItemCopyMatching(query as CFDictionary, &result)
+            if status == errSecItemNotFound { return "" }
+            guard status == errSecSuccess, let data = result as? Data else { return nil }
+            return String(decoding: data, as: UTF8.self)
         }
-        guard status == errSecSuccess || (token.isEmpty && status == errSecItemNotFound) else { throw DeckError.message("Keychain error: \(status)") }
+    }
+
+    static func save(_ token: String) throws {
+        try cache.save(token) {
+            let key: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "local.logi-easy-switch.deck", kSecAttrAccount as String: "ha-token"]
+            var status: OSStatus
+            if token.isEmpty { status = SecItemDelete(key as CFDictionary) }
+            else {
+                status = SecItemUpdate(key as CFDictionary, [kSecValueData as String: Data(token.utf8)] as CFDictionary)
+                if status == errSecItemNotFound {
+                    var item = key
+                    item[kSecValueData as String] = Data(token.utf8)
+                    item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+                    status = SecItemAdd(item as CFDictionary, nil)
+                }
+            }
+            guard status == errSecSuccess || (token.isEmpty && status == errSecItemNotFound) else { throw DeckError.message("Keychain error: \(status)") }
+        }
     }
 }
 
@@ -92,10 +102,11 @@ enum DeckError: LocalizedError {
     var errorDescription: String? { if case let .message(value) = self { return value }; return nil }
 }
 
-struct DeckPresentation {
+struct DeckPresentation: Equatable {
     var text: String = ""
     var icon: String?
     var highlighted: Bool?
+    var pendingSetpoint = false
 }
 
 // Providers own execution and presentation, independent of the launcher and editor.

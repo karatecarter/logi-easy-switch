@@ -59,11 +59,11 @@ enum DeckThermostatPreset {
         increase.kind = "homeassistant"
         increase.parentID = group.id
         increase.dismiss = .never
-        increase.settings = ["action": "script.adjust_thermostat", "data": "{\"incr\":1}", "thermostatRole": "increase"]
+        increase.settings = ["action": "script.adjust_thermostat", "data": "{\"increment\":\"ticks\"}", "thermostatRole": "increase"]
         var decrease = increase
         decrease.id = UUID()
         decrease.name = "−"
-        decrease.settings["data"] = "{\"incr\":-1}"
+        decrease.settings["data"] = "{\"increment\":\"-ticks\"}"
         decrease.settings["thermostatRole"] = "decrease"
         var mode = DeckButton()
         mode.name = "Mode"
@@ -106,5 +106,26 @@ enum DeckThermostatPreset {
         {% set current = state_attr('\(entity)', 'current_temperature') %}{% set target = state_attr('\(entity)', 'temperature') %}{% set low = state_attr('\(entity)', 'target_temp_low') %}{% set high = state_attr('\(entity)', 'target_temp_high') %}Thermostat - {{ current if current is not none else '—' }}
         {{ states('\(entity)') | replace('_', ' ') | title }} set to {{ target if target is not none else ((low | string) ~ '–' ~ (high | string) if low is not none and high is not none else '—') }}
         """
+    }
+}
+
+
+extension DeckConfiguration {
+    func migratingLegacyThermostatIncrement() -> DeckConfiguration {
+        var updated = self
+        let groups = Set(buttons.filter { $0.kind == "group" && $0.settings["preset"] == "thermostat" }.map(\.id))
+        for index in updated.buttons.indices {
+            let button = updated.buttons[index]
+            guard button.parentID.map({ groups.contains($0) }) == true,
+                  ["increase", "decrease"].contains(button.settings["thermostatRole"] ?? ""),
+                  let source = button.settings["data"],
+                  let data = source.data(using: .utf8),
+                  var body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let legacy = body.removeValue(forKey: "incr") else { continue }
+            if body["increment"] == nil { body["increment"] = legacy }
+            guard let encoded = try? JSONSerialization.data(withJSONObject: body, options: .sortedKeys) else { continue }
+            updated.buttons[index].settings["data"] = String(decoding: encoded, as: UTF8.self)
+        }
+        return updated
     }
 }

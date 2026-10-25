@@ -29,4 +29,19 @@ else
     codesign --force --entitlements "$project_dir/Packaging/Switchboard.entitlements" --options runtime --timestamp --sign "$signing_identity" "$app_path"
 fi
 codesign --verify --deep --strict "$app_path"
+
+# Rebuilt ad-hoc apps can retain stale TCC decisions. Reset only this app's
+# privacy permissions so macOS can request fresh consent on the next launch.
+# CI/distribution builds can opt out without affecting the produced bundle.
+if [[ "${SWITCHBOARD_RESET_PERMISSIONS:-1}" != "0" ]]; then
+    switchboard_bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$app_path/Contents/Info.plist")
+    if [[ -z "$switchboard_bundle_id" ]]; then
+        print -u2 "Cannot reset permissions: the built app has no bundle identifier."
+        exit 1
+    fi
+    if ! /usr/bin/tccutil reset All "$switchboard_bundle_id"; then
+        print -u2 "Warning: could not reset macOS privacy permissions for $switchboard_bundle_id."
+        print -u2 "The app was built successfully; reset its permissions manually if needed."
+    fi
+fi
 echo "$app_path"

@@ -15,7 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let defaults = DeviceDefaults()
     private let hotkeys = HotkeyManager()
     private let deckStore = DeckStore()
-    private lazy var deck = DeckController(store: deckStore)
+    private let deckLogi = DeckLogiService()
+    private lazy var deck = DeckController(store: deckStore, logi: deckLogi)
     private lazy var shortcutSync = DeckSyncCoordinator(store: deckStore)
     private var deckSettingsWindow: NSWindow?
     private let mqtt = MQTTCoordinator()
@@ -35,6 +36,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.button?.toolTip = "Switchboard"
         menu.delegate = self
         statusItem.menu = menu
+        deckLogi.perform = { [weak self] request in
+            guard let self else { throw DeckError.message("The application is shutting down.") }
+            try await self.performDeckLogi(request)
+        }
+        mqtt.onDeviceTargetRequested = { [weak self] request in
+            guard let self else { return }
+            let machine = self.defaults.machineName(matchingDisplayName: request.target) ?? request.target
+            self.loadDevices(requestedTarget: machine, requestedScope: request.devices)
+        }
         mqtt.onTargetRequested = { [weak self] target in
             guard let self else { return }
             let machine = self.defaults.machineName(matchingDisplayName: target) ?? target
@@ -115,7 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         loadDevices()
     }
 
-    private func loadDevices(requestedTarget: String? = nil) {
+    private func loadDevices(requestedTarget: String? = nil, requestedScope: DeckLogiScope = .both) {
         Task.detached { [weak self] in
             guard let self else { return }
             do {
@@ -139,8 +149,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         self.mqtt.clearLocalOwnership()
                     }
                     if let requestedTarget {
-                        let selected = self.defaults.selectedDevices(from: devices)
-                        if !selected.isEmpty { self.switchDevices(selected, targetName: requestedTarget) }
+                        let selected = self.defaults.selectedDevices(from: devices).filter { requestedScope.includes($0) }
+                        if !selected.isEmpty { self.switchDevices(selected, targetName: requestedTarget, scope: requestedScope) }
                     }
                     if self.isMenuOpen {
                         self.updateVisibleMenuState()
@@ -317,7 +327,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func switchDevices(_ devices: [LogiDevice], targetName: String) {
+    private func switchDevices(_ devices: [LogiDevice], targetName: String, scope: DeckLogiScope = .both) {
         let knownHosts = cachedHosts
         Task.detached { [weak self] in
             guard let self else { return }
@@ -340,13 +350,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let pending = targets.filter { !$0.host.connected }.map { ($0.device, $0.host) }
                 try LogiAgent().switchDevices(pending)
                 await MainActor.run {
-                    self.mqtt.publishCurrentTarget(self.defaults.displayName(for: targetName))
+                    if scope == .both { self.mqtt.publishCurrentTarget(self.defaults.displayName(for: targetName)) }
+                    else { self.mqtt.clearLocalOwnership() }
                     self.refreshMenu()
                 }
             } catch {
                 await MainActor.run { self.showError(error) }
             }
         }
+    }
+
+    private func performDeckLogi(_ request: DeckLogiRequest) async throws {
+        guard let target = defaults.machineName(matchingDisplayName: request.target), defaults.isMachineVisible(target) else {
+            throw DeckError.message("The destination computer is not configured or is hidden on this Mac.")
+        }
+        if defaults.mqtt.isUsable {
+            guard mqtt.requestDevices(DeckLogiRequest(target: defaults.displayName(for: target), devices: request.devices)) else {
+                throw DeckError.message("MQTT is not connected; the switching request was not sent.")
+            }
+            return
+        }
+        let mouseID = defaults.mouseID, keyboardID = defaults.keyboardID
+        let scope = request.devices
+        try await Task.detached {
+            let agent = LogiAgent()
+            let devices = try agent.devices()
+            let expected = scope == .both ? [mouseID, keyboardID] : scope == .mouse ? [mouseID] : [keyboardID]
+            guard expected.allSatisfy({ !$0.isEmpty }) else { throw DeckError.message("Choose the default devices in the main Settings window first.") }
+            let selected = devices.filter { expected.contains($0.id) && scope.includes($0) && $0.isAvailable }
+            guard selected.count == expected.count else { throw DeckError.message("The selected default devices are not connected to this Mac. Use MQTT to request devices connected elsewhere.") }
+            var targets: [(LogiDevice, LogiHost)] = []
+            for device in selected {
+                guard let host = try agent.hosts(for: device).first(where: { $0.paired && $0.name.caseInsensitiveCompare(target) == .orderedSame }) else {
+                    throw DeckError.message("\(target) is not paired on \(device.name).")
+                }
+                if !host.connected { targets.append((device, host)) }
+            }
+            targets.sort { $0.0.type == "MOUSE" && $1.0.type == "KEYBOARD" }
+            try agent.switchDevices(targets)
+        }.value
+        loadDevices()
     }
 
     @objc private func refreshMenuFromAction() { refreshMenu() }
@@ -466,10 +509,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func configureMQTT() {
-        shortcutSync.configure(broker: defaults.mqtt, password: MQTTPasswordStore.load())
+        deckLogi.destinations = defaults.knownMachineNames.filter(defaults.isMachineVisible).map {
+            DeckChoice(id: $0, title: defaults.displayName(for: $0), detail: $0)
+        }
+        let password = defaults.mqtt.enabled ? MQTTPasswordStore.load() : ""
+        shortcutSync.configure(broker: defaults.mqtt, password: password)
         mqtt.configure(
             defaults.mqtt,
-            password: MQTTPasswordStore.load(),
+            password: password,
             targets: defaults.knownMachineNames.filter(defaults.isMachineVisible).map(defaults.displayName(for:))
         )
     }
@@ -514,7 +561,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let window = deckSettingsWindow {
             window.makeKeyAndOrderFront(nil)
         } else {
-            let window = NSWindow(contentViewController: NSHostingController(rootView: DeckSettingsView(store: deckStore, sync: shortcutSync)))
+            let window = NSWindow(contentViewController: NSHostingController(rootView: DeckSettingsView(store: deckStore, sync: shortcutSync, logi: deckLogi)))
             window.title = "Shortcuts Settings"
             window.styleMask = [.titled, .closable, .resizable]
             window.isReleasedWhenClosed = false

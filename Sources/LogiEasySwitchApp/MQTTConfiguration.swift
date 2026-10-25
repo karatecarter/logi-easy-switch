@@ -60,47 +60,52 @@ struct MQTTConfiguration: Codable, Equatable, Sendable {
 }
 
 enum MQTTPasswordStore {
+    private static let cache = CredentialSessionCache()
     private static let service = "local.logi-easy-switch.mqtt"
     private static let account = "broker-password"
 
-    static func load() -> String {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var value: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &value) == errSecSuccess,
-              let data = value as? Data else { return "" }
-        return String(data: data, encoding: .utf8) ?? ""
+    static func load(retry: Bool = false) -> String {
+        cache.load(retry: retry) {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+                kSecReturnData as String: true,
+                kSecMatchLimit as String: kSecMatchLimitOne,
+            ]
+            var value: CFTypeRef?
+            let status = SecItemCopyMatching(query as CFDictionary, &value)
+            if status == errSecItemNotFound { return "" }
+            guard status == errSecSuccess, let data = value as? Data else { return nil }
+            return String(data: data, encoding: .utf8) ?? ""
+        }
     }
 
     static func save(_ password: String) throws {
-        let key: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        let status: OSStatus
-        if password.isEmpty {
-            status = SecItemDelete(key as CFDictionary)
-        } else {
-            let attributes = [kSecValueData as String: Data(password.utf8)]
-            let updated = SecItemUpdate(key as CFDictionary, attributes as CFDictionary)
-            if updated == errSecItemNotFound {
-                var item = key
-                item[kSecValueData as String] = Data(password.utf8)
-                item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-                status = SecItemAdd(item as CFDictionary, nil)
+        try cache.save(password) {
+            let key: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+            ]
+            let status: OSStatus
+            if password.isEmpty {
+                status = SecItemDelete(key as CFDictionary)
             } else {
-                status = updated
+                let attributes = [kSecValueData as String: Data(password.utf8)]
+                let updated = SecItemUpdate(key as CFDictionary, attributes as CFDictionary)
+                if updated == errSecItemNotFound {
+                    var item = key
+                    item[kSecValueData as String] = Data(password.utf8)
+                    item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+                    status = SecItemAdd(item as CFDictionary, nil)
+                } else {
+                    status = updated
+                }
+            }
+            guard status == errSecSuccess || (password.isEmpty && status == errSecItemNotFound) else {
+                throw LogiError.requestFailed("Could not save MQTT password to Keychain (status \(status)).")
             }
         }
-        guard status == errSecSuccess || (password.isEmpty && status == errSecItemNotFound) else {
-            throw LogiError.requestFailed("Could not save MQTT password to Keychain (status \(status)).")
-        }
     }
-
 }

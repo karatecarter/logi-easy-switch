@@ -24,7 +24,7 @@ struct DeckGroupEditor: View {
                 DeckSearchPicker(title: "Adjustment script", selection: group?.settings["adjustScript"] ?? "script.adjust_thermostat", choices: (catalog?.actions ?? []).filter { $0.id.hasPrefix("script.") && !["script.turn_on", "script.turn_off", "script.toggle", "script.reload"].contains($0.id) }.map { DeckChoice(id: $0.id, title: $0.name, detail: $0.id) }) { script in
                     configure(script: script)
                 }
-                Text("+ sends incr: 1; − sends incr: −1. Choosing a thermostat sets the live text and targets for Cool, Heat, Auto and Off. Edit the Mode folder’s controls if your thermostat uses different modes.").font(.caption).foregroundStyle(.secondary)
+                Text("+/− taps accumulate for one second after the last tap, then send increment: ticks or −ticks. Choosing a thermostat sets the live text and targets for Cool, Heat, Auto and Off. Edit the Mode folder’s controls if your thermostat uses different modes.").font(.caption).foregroundStyle(.secondary)
             }
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
             Text("Controls").font(.headline)
@@ -71,7 +71,7 @@ struct DeckGroupEditor: View {
     }
     private func addControl(folder: Bool) {
         var control = DeckButton()
-        control.kind = folder ? "folder" : "homeassistant"
+        control.kind = folder ? "folder" : "application"
         control.name = folder ? "Mode" : "New action"
         control.parentID = groupID
         control.dismiss = .never

@@ -23,6 +23,13 @@ the Xcode Command Line Tools. Run `Scripts/make-app.sh`. The result is a
 self-contained `dist/Switchboard.app`; a Mac running that app does not
 need Swift or Node.
 
+After a successful build and signature verification, the script resets this
+app's macOS privacy permissions using its bundle identifier. Relaunch Switchboard
+and grant permissions again as requested. Saved settings and Keychain credentials
+are preserved. To keep current permissions for CI or distribution builds, run
+`SWITCHBOARD_RESET_PERMISSIONS=0 Scripts/make-app.sh`. If macOS refuses the reset,
+the script reports a warning while retaining the successful build.
+
 ## Menu-bar app
 
 Run the built app from `dist/Switchboard.app`. Its normal menu lists only
@@ -48,12 +55,17 @@ Use **Shortcuts Settings…** in the menu bar to configure a virtual shortcut de
 then open it with **Show Shortcuts** or its configurable global hotkey. Buttons
 support per-folder keyboard keys (including numpad), nested folders, Home
 Assistant actions and templates, Apple Shortcuts, AppleScript, Python, microphone
-mute, volume controls, and app-specific camera commands. Global and per-button
+mute, volume controls, launch applications, open URLs, and app-specific camera commands.
+Icons can use searchable symbols, application icons, or imported/pasted images.
+Click outside the launcher to dismiss it. Global and per-button
 dismissal rules control whether it stays open.
 
-Shortcut configurations can sync through the existing MQTT broker: choose one
-publishing Mac and configure the others to follow its publisher ID under
-**Shortcuts Settings → Shortcut sync**. Credentials and machine-specific paths stay local.
+Shortcut configurations can sync through the existing MQTT broker. Under
+**Shortcuts Settings → Shortcut sync**, choose **Edit on any Mac**, create a shared
+group on one Mac and enter its group ID on the others. Offline edits merge on
+reconnection; conflicting edits to the same button are preserved for review.
+Credentials and machine-specific paths stay local. The older Publish/Follow modes
+remain available.
 
 See [launcher setup and Stream Deck adapter design](docs/SHORTCUTS.md) for
 configuration, limitations and the future plugin framework.

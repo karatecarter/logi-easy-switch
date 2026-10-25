@@ -23,19 +23,31 @@ struct DeckCountdown {
 struct DeckCountdownView: View {
     let countdown: DeckCountdown
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.1)) { _ in
-            let now = ContinuousClock.now
-            VStack(spacing: 5) {
+        VStack(spacing: 5) {
+            TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+                let remaining = countdown.remaining()
                 HStack {
                     Label(countdown.title, systemImage: "timer").lineLimit(1)
                     Spacer()
-                    Text("\(countdown.remaining(at: now), specifier: "%.1f")s")
+                    Text("\(remaining, specifier: "%.1f")s")
                         .monospacedDigit()
                 }.font(.caption).foregroundStyle(.secondary)
-                ProgressView(value: countdown.fractionRemaining(at: now))
-                    .progressViewStyle(.linear)
-                    .accessibilityLabel(countdown.title)
-                    .accessibilityValue("\(Int(ceil(countdown.remaining(at: now)))) seconds remaining")
+            }
+            // Draw directly at display cadence. AppKit's native progress indicator
+            // can quantize updates even when its input value changes more often.
+            TimelineView(.animation(minimumInterval: 1.0 / 60)) { _ in
+                let now = ContinuousClock.now
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(.quaternary)
+                        Capsule().fill(Color.accentColor)
+                            .frame(width: geometry.size.width * countdown.fractionRemaining(at: now))
+                    }
+                }
+                .frame(height: 4)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(countdown.title)
+                .accessibilityValue("\(Int(ceil(countdown.remaining(at: now)))) seconds remaining")
             }
         }
     }

@@ -8,7 +8,7 @@ Have IT configure these broker controls:
 
 - Disable anonymous access and restrict broker reachability to approved hosts.
 - Authenticate approved clients and allow commands only from the participating Macs and approved Home Assistant controls.
-- For a namespace such as `work-desk`, allow those clients read/write on `work-desk/command/target` and `work-desk/state/current-target`. Allow write to `work-desk/mac/<client-id>/availability` and `work-desk/mac/<client-id>/name` for each client's own stable ID. Read permissions for status consumers can be narrower.
+- For a namespace such as `work-desk`, allow those clients read/write on `work-desk/command/devices` for scoped keyboard/mouse commands, and on `work-desk/command/target` and `work-desk/state/current-target`. Allow write to `work-desk/mac/<client-id>/availability` and `work-desk/mac/<client-id>/name` for each client's own stable ID. Read permissions for status consumers can be narrower.
 - If automatic Home Assistant discovery is enabled, allow publishing only the relevant select, sensor, and binary-sensor configuration topics under `homeassistant/<component>/logi_namespace_work-desk/`. For the default namespace, the discovery ID remains `logi_easy_switch`. Disable discovery if IT manages the entities centrally.
 - Clear any retained command on the command topic. Require non-retained command publishing; disable old clients that still execute retained commands.
 - Restrict broker payload size and publication rate in addition to the app's limits. Rotate credentials if they were previously sent over an untrusted plaintext connection.
