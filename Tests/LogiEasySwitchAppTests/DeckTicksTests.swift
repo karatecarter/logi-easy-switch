@@ -36,12 +36,32 @@ final class DeckTicksTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(150))
         XCTAssertEqual(sends, [3])
     }
-    @MainActor func testPlusAndMinusFlushIndependently() async throws {
-        let debouncer = DeckTickDebouncer(delay: .milliseconds(30))
+    @MainActor func testMixedThermostatTapsSendOneNetIncrementAfterQuietPeriod() async throws {
+        let debouncer = DeckTickDebouncer(delay: .milliseconds(100))
+        var configuration = DeckConfiguration()
+        configuration.buttons = DeckThermostatPreset.make()
+        let plus = configuration.buttons[1]
+        let minus = configuration.buttons[2]
+        XCTAssertEqual(DeckTicks.batchID(plus, configuration: configuration), DeckTicks.batchID(minus, configuration: configuration))
+        var increment = 0
         var sends: [Int] = []
-        debouncer.schedule(UUID()) { sends.append(2) }
-        debouncer.schedule(UUID()) { sends.append(-3) }
-        try await Task.sleep(for: .milliseconds(100))
-        XCTAssertEqual(sends.sorted(), [-3, 2])
+        for button in [minus, plus, plus, minus, minus] {
+            increment += try XCTUnwrap(DeckTicks.sign(button))
+            let total = increment
+            debouncer.schedule(DeckTicks.batchID(button, configuration: configuration)) {
+                let resolved = try! DeckTicks.resolvedIncrement(button, increment: total)
+                let body = try! JSONSerialization.jsonObject(with: Data(resolved.settings["data"]!.utf8)) as! [String: Any]
+                sends.append(body["increment"] as! Int)
+            }
+            try await Task.sleep(for: .milliseconds(30))
+            XCTAssertTrue(sends.isEmpty)
+        }
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(sends, [-1])
+        let resolved = try DeckTicks.resolvedIncrement(minus, increment: 0)
+        let body = try JSONSerialization.jsonObject(with: Data(resolved.settings["data"]!.utf8)) as! [String: Any]
+        XCTAssertEqual(body["increment"] as? Int, 0)
+        let other = DeckThermostatPreset.make()
+        XCTAssertNotEqual(DeckTicks.batchID(other[1], configuration: DeckConfiguration()), DeckTicks.batchID(plus, configuration: configuration))
     }
 }

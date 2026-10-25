@@ -6,15 +6,26 @@ enum DeckTicks {
               let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let value = body["increment"] as? String else { return nil }
         return value == "ticks" ? 1 : value == "-ticks" ? -1 : nil
     }
-    static func resolved(_ button: DeckButton, ticks: Int) throws -> DeckButton {
-        guard let sign = sign(button) else { return button }
-        guard ticks > 0, ticks <= 10000 else { throw DeckError.message("Invalid adjustment tap count.") }
+    static func batchID(_ button: DeckButton, configuration: DeckConfiguration) -> UUID {
+        if sign(button) != nil,
+           let group = configuration.buttons.first(where: { $0.id == button.parentID && $0.kind == "group" && $0.settings["preset"] == "thermostat" }) {
+            return group.id
+        }
+        return button.id
+    }
+    static func resolvedIncrement(_ button: DeckButton, increment: Int) throws -> DeckButton {
+        guard abs(increment) <= 10000 else { throw DeckError.message("Invalid thermostat adjustment.") }
         let data = try DeckHomeAssistantClient.actionData(button.settings["data"] ?? "{}")
         var body = try JSONSerialization.jsonObject(with: data) as! [String: Any]
-        body["increment"] = sign * ticks
+        body["increment"] = increment
         var result = button
         result.settings["data"] = String(decoding: try JSONSerialization.data(withJSONObject: body, options: .sortedKeys), as: UTF8.self)
         return result
+    }
+    static func resolved(_ button: DeckButton, ticks: Int) throws -> DeckButton {
+        guard let sign = sign(button) else { return button }
+        guard ticks > 0, ticks <= 10000 else { throw DeckError.message("Invalid adjustment tap count.") }
+        return try resolvedIncrement(button, increment: sign * ticks)
     }
 }
 

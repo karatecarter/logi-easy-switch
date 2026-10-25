@@ -18,6 +18,7 @@ private final class DeckPanel: NSPanel {
     @Published var running: UUID?
     @Published private(set) var countdown: DeckCountdown?
     private var panel: NSPanel?
+    private var launcherVisible = false
     private var monitor: Any?
     private var outsideClickMonitors: [Any] = []
     private var refreshTask: Task<Void, Never>?
@@ -42,7 +43,7 @@ private final class DeckPanel: NSPanel {
         providers = [BuiltinDeckProvider()] + (logi.map { [DeckLogiProvider(service: $0)] } ?? [])
     }
 
-    func toggle() { if panel?.isVisible == true { hide() } else { show() } }
+    func toggle() { if launcherVisible { hide() } else { show() } }
     func show() {
         if panel == nil {
             let panel = DeckPanel(contentRect: NSRect(x: 0, y: 0, width: 620, height: 460), styleMask: [.borderless], backing: .buffered, defer: false)
@@ -55,7 +56,10 @@ private final class DeckPanel: NSPanel {
             panel.contentView = NSHostingView(rootView: DeckView(controller: self, store: store))
             self.panel = panel
         }
-        previousApp = NSWorkspace.shared.frontmostApplication
+        if let frontmost = NSWorkspace.shared.frontmostApplication, frontmost.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            previousApp = frontmost
+        }
+        launcherVisible = true
         folder = nil
         navigationRevision = UUID()
         error = nil
@@ -63,7 +67,14 @@ private final class DeckPanel: NSPanel {
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         resizeToFit(animated: false, on: screen)
         NSApp.activate(ignoringOtherApps: true)
+        panel?.ignoresMouseEvents = false
+        if panel?.isVisible != true { panel?.alphaValue = 0 }
         panel?.makeKeyAndOrderFront(nil)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.18
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel?.animator().alphaValue = 1
+        }
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, event.window === self.panel else { return event }
@@ -102,6 +113,8 @@ private final class DeckPanel: NSPanel {
         }) { outsideClickMonitors.append(monitor) }
     }
     func hide(restoreFocus: Bool = true) {
+        guard launcherVisible else { return }
+        launcherVisible = false
         outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }
         outsideClickMonitors = []
         generation = UUID()
@@ -111,9 +124,22 @@ private final class DeckPanel: NSPanel {
         }
         cancelTimer()
         refreshTask?.cancel()
-        panel?.orderOut(nil)
         if let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }
-        if restoreFocus && NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier { previousApp?.activate(options: []) }
+        panel?.ignoresMouseEvents = true
+        let closingGeneration = generation
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.14
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            panel?.animator().alphaValue = 0
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.generation == closingGeneration, !self.launcherVisible else { return }
+                self.panel?.orderOut(nil)
+                if restoreFocus && NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier {
+                    self.previousApp?.activate(options: [])
+                }
+            }
+        }
     }
     func back() {
         guard let folder else { return }
@@ -197,27 +223,35 @@ private final class DeckPanel: NSPanel {
     private func queueTicks(_ button: DeckButton) {
         cancelTimer()
         error = nil
-        var batch = tickBatches[button.id] ?? TickBatch(count: 0, button: button, session: generation, navigation: navigationRevision)
-        guard batch.count < 10000 else { return }
-        batch.count += 1
+        let batchID = DeckTicks.batchID(button, configuration: store.configuration)
+        var batch = tickBatches[batchID] ?? TickBatch(count: 0, button: button, session: generation, navigation: navigationRevision)
+        let increment = batch.count + (DeckTicks.sign(button) ?? 0)
+        guard abs(increment) <= 10000 else { return }
+        batch.count = increment
+        batch.button = button
         if let groupID = button.parentID, let text = presentations[groupID]?.text,
            let (ticket, preview) = thermostatPreview.begin(action: button, configuration: store.configuration, text: text) {
             batch.preview = ticket
             presentations[groupID]?.text = preview
             presentations[groupID]?.pendingSetpoint = true
         }
+        for control in store.configuration.buttons where DeckTicks.batchID(control, configuration: store.configuration) == batchID {
+            pendingTickCounts.removeValue(forKey: control.id)
+        }
         pendingTickCounts[button.id] = batch.count
-        tickBatches[button.id] = batch
-        tickDebouncer.schedule(button.id) { [weak self] in
+        tickBatches[batchID] = batch
+        tickDebouncer.schedule(batchID) { [weak self] in
             guard let self else { return }
             // Serialize against other actions without dropping a queued adjustment.
             while self.running != nil {
                 do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
             }
-            guard let ready = self.tickBatches.removeValue(forKey: button.id) else { return }
-            self.pendingTickCounts.removeValue(forKey: button.id)
+            guard let ready = self.tickBatches.removeValue(forKey: batchID) else { return }
+            for control in self.store.configuration.buttons where DeckTicks.batchID(control, configuration: self.store.configuration) == batchID {
+                self.pendingTickCounts.removeValue(forKey: control.id)
+            }
             do {
-                let resolved = try DeckTicks.resolved(ready.button, ticks: ready.count)
+                let resolved = try DeckTicks.resolvedIncrement(ready.button, increment: ready.count)
                 self.execute(resolved, previewTicket: ready.preview, previewAlreadyApplied: true, originSession: ready.session, originNavigation: ready.navigation)
             } catch { self.error = error.localizedDescription }
         }
@@ -320,14 +354,30 @@ struct DeckView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: measuringColumns == nil ? .infinity : nil)
             .clipped()
-            if let countdown = controller.countdown { DeckCountdownView(countdown: countdown) }
+            statusFooter
+                .frame(height: 28)
+                .frame(maxWidth: .infinity)
             if let error = controller.error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
         }.padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
         .onChange(of: store.configuration) { _, _ in updateSize() }
         .onChange(of: controller.presentations) { _, _ in updateSize() }
         .onChange(of: controller.error) { _, _ in updateSize() }
-        .onChange(of: controller.countdown != nil) { _, _ in updateSize() }
-        .onChange(of: controller.pendingTickCounts) { _, _ in updateSize() }
+    }
+    private var statusFooter: some View {
+        let updating = !controller.pendingTickCounts.isEmpty || controller.presentations.values.contains { $0.pendingSetpoint }
+        return Group {
+            if let countdown = controller.countdown {
+                DeckCountdownView(countdown: countdown, status: updating ? "Updating setpoint…" : nil)
+            } else {
+                VStack(spacing: 5) {
+                    HStack {
+                        if updating { Text("Updating setpoint…").font(.caption).foregroundStyle(.secondary) }
+                        Spacer(minLength: 0)
+                    }
+                    Color.clear.frame(height: 4)
+                }
+            }
+        }
     }
     private func updateSize() {
         guard measuringColumns == nil else { return }
@@ -346,10 +396,7 @@ struct DeckView: View {
                                         Button { controller.activate(control) } label: {
                                             VStack(spacing: 3) {
                                                 Text(control.name).font(.headline)
-                                                if let ticks = controller.pendingTickCounts[control.id] {
-                                                    Text("\(ticks) queued").font(.caption2).foregroundStyle(.secondary)
-                                                }
-                                                if let key = control.key { Text(key.displayLabel).font(.caption2.monospaced()).foregroundStyle(.secondary) }
+                                                if let key = control.key { Text(key.compactDisplayLabel).font(.caption2.monospaced()).foregroundStyle(.secondary) }
                                             }.frame(maxWidth: .infinity, minHeight: 32)
                                         }.disabled(controller.running != nil && DeckTicks.sign(control) == nil)
                                         .help(control.kind == "folder" ? "Open \(control.name)" : control.name)
@@ -381,9 +428,6 @@ struct DeckView: View {
                         Text(controller.running == button.id ? "Running…" : presentation?.text ?? "")
                             .font(replaceName ? .headline : .caption).lineLimit(3)
                     }
-                    if presentation?.pendingSetpoint == true {
-                        Text("Updating setpoint…").font(.caption2).foregroundStyle(.secondary)
-                    }
                 }
                 .multilineTextAlignment(.center)
                 .frame(height: 110)
@@ -402,9 +446,6 @@ struct DeckView: View {
                     Text(controller.running == button.id ? "Running…" : presentation?.text ?? " ")
                         .font(replaceName ? .headline : .caption)
                         .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-                    if presentation?.pendingSetpoint == true {
-                        Text("Updating setpoint…").font(.caption2).foregroundStyle(.secondary)
-                    }
                 }
             }
         }

@@ -22,12 +22,13 @@ struct DeckCountdown {
 
 struct DeckCountdownView: View {
     let countdown: DeckCountdown
+    var status: String? = nil
     var body: some View {
         VStack(spacing: 5) {
             TimelineView(.periodic(from: .now, by: 0.1)) { _ in
                 let remaining = countdown.remaining()
                 HStack {
-                    Label(countdown.title, systemImage: "timer").lineLimit(1)
+                    Label(status ?? countdown.title, systemImage: "timer").lineLimit(1)
                     Spacer()
                     Text("\(remaining, specifier: "%.1f")s")
                         .monospacedDigit()
