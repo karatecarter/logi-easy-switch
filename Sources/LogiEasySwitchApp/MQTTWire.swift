@@ -75,3 +75,13 @@ enum MQTTCommandPolicy {
         return targets.first { $0 == value }
     }
 }
+
+
+enum MQTTSubscriptionPolicy {
+    static func validate(_ body: Data) throws {
+        let bytes = [UInt8](body)
+        guard bytes.count == 3, bytes[0] != 0 || bytes[1] != 0 else { throw LogiError.protocolError("Invalid MQTT SUBACK.") }
+        if bytes[2] == 0x80 { throw LogiError.unavailable("MQTT broker denied the subscription. Check topic read permissions, including shared-group chunk topics.") }
+        guard bytes[2] == 0 else { throw LogiError.protocolError("Unexpected MQTT subscription QoS.") }
+    }
+}

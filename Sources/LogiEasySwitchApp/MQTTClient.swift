@@ -213,7 +213,8 @@ final class MQTTClient: @unchecked Sendable {
             let message = try packet.publication()
             onMessage?(message.topic, message.payload, message.retained)
         case 0x90:
-            guard isConnected, packet.body.count >= 3 else { throw LogiError.protocolError("Invalid MQTT SUBACK.") }
+            guard isConnected else { throw LogiError.protocolError("MQTT SUBACK before connection.") }
+            try MQTTSubscriptionPolicy.validate(packet.body)
         case 0xd0:
             guard isConnected, packet.body.isEmpty else { throw LogiError.protocolError("Invalid MQTT PINGRESP.") }
         default:

@@ -26,3 +26,5 @@ The legacy Node CLI validates that its socket path is an actual socket owned by 
 Follow [Apple's notarization instructions](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution) for the final signed bundle, staple the accepted ticket, and validate Gatekeeper behavior on a managed test Mac. Record the release executable hash and reviewed commit. An ad-hoc build or successful static scan alone is not publisher verification or IT approval.
 
 Validate Input Monitoring approval, global shortcuts, login behavior, device switching, and TLS/MQTT interoperability on that exact signed release. The security regression suite does not replace that hardware and deployment acceptance test.
+
+Shortcut shared-group sync also needs read access to `<namespace>/shortcuts/shared/<group-id>/#` and write access to `<namespace>/shortcuts/shared/<group-id>/<own-sync-id>/#` plus the own-sync-id base topic. Large snapshots use retained chunk subtopics and a digest-verified manifest, preserving the 64 KB MQTT packet bound.

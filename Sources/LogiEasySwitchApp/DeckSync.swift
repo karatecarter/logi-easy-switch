@@ -85,6 +85,7 @@ struct DeckSyncSettings: Codable, Equatable {
     private(set) var sharedDocument: DeckSharedDocument?
     private var activeSharedKey: String?
     private var applyingRemote = false
+    private var sharedAssembler = DeckSyncAssembler()
     var isReadOnly: Bool { isFollower || (settings.role == .collaborative && !sharedReady) }
     let publisherID: String
     var isFollower: Bool { settings.role == .follower }
@@ -128,6 +129,7 @@ struct DeckSyncSettings: Codable, Equatable {
         client?.disconnect()
         client = nil
         connected = false
+        sharedAssembler = DeckSyncAssembler()
     }
     func reconnect() {
         stop()
@@ -143,7 +145,7 @@ struct DeckSyncSettings: Codable, Equatable {
         client = mqtt
         let sharedMode = settings.role == .collaborative
         let root = sharedRoot
-        let subscribedTopic = sharedMode ? root + "/+" : topic
+        let subscribedTopic = sharedMode ? root + "/#" : topic
         mqtt.onConnected = { [weak self, weak mqtt] in
             Task { @MainActor in
                 guard let self, self.client === mqtt else { return }
@@ -164,9 +166,9 @@ struct DeckSyncSettings: Codable, Equatable {
             Task { @MainActor in
                 guard let self, self.client === mqtt else { return }
                 if sharedMode {
-                    let peer = String(topic.dropFirst(root.count + 1))
-                    guard UUID(uuidString: peer) != nil else { return }
-                    self.receiveShared(payload, peer: peer)
+                    let parts = topic.dropFirst(root.count + 1).split(separator: "/").map(String.init)
+                    guard let peer = parts.first, UUID(uuidString: peer) != nil else { return }
+                    self.receiveSharedPacket(payload, path: Array(parts.dropFirst()), peer: peer)
                 } else if self.isFollower { self.receive(payload) }
             }
         }
@@ -285,11 +287,35 @@ struct DeckSyncSettings: Codable, Equatable {
         guard connected else { status = "Offline; edits saved locally and will sync when reconnected."; return }
         do {
             let envelope = DeckSharedPeerEnvelope(source: publisherID, document: document)
-            let data = try JSONEncoder().encode(envelope)
-            guard data.count <= DeckSyncEnvelope.maximumPayload else { throw DeckError.message("Shared configuration and history exceed 60 KB.") }
-            client?.publish(topic: sharedRoot + "/" + publisherID, payload: data, retain: true)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let data = try encoder.encode(envelope)
+            let transfer = try DeckSyncTransfer.packets(data, source: publisherID, group: source)
+            let previousKey = sharedKey + ".outgoingManifest"
+            let previous = defaults.data(forKey: previousKey).flatMap { try? JSONDecoder().decode(DeckSyncManifest.self, from: $0) }
+            for packet in transfer.packets {
+                client?.publish(topic: sharedRoot + "/" + publisherID + packet.suffix, payload: packet.payload, retain: true)
+            }
+            // Remove this peer's old retained chunks only after sending the new manifest.
+            if let previous, previous.snapshot != transfer.manifest?.snapshot,
+               (try? DeckSyncTransfer.validate(previous, peer: publisherID, group: source)) != nil {
+                for index in 0..<previous.partCount {
+                    client?.publish(topic: sharedRoot + "/" + publisherID + "/chunks/\(previous.snapshot)/\(index)", payload: Data(), retain: true)
+                }
+            }
+            defaults.set(transfer.manifest.flatMap { try? JSONEncoder().encode($0) }, forKey: previousKey)
             status = sharedConflicts.isEmpty ? "Shared edits sent to the broker." : "Synced with \(sharedConflicts.count) conflict(s) to resolve."
         } catch { status = error.localizedDescription }
+    }
+    func receiveSharedPacket(_ data: Data, path: [String], peer: String) {
+        guard settings.role == .collaborative else { return }
+        do {
+            if let complete = try sharedAssembler.receive(data, path: path, peer: peer, group: source) {
+                receiveShared(complete, peer: peer)
+            } else if !data.isEmpty && !sharedReady {
+                status = "Receiving shared configuration…"
+            }
+        } catch { status = "Could not receive shared shortcuts: \(error.localizedDescription)" }
     }
     func receiveShared(_ data: Data, peer: String) {
         guard settings.role == .collaborative else { return }

@@ -144,7 +144,7 @@ struct DeckSharedPeerEnvelope: Codable {
     var source: String
     var document: DeckSharedDocument
     static func decode(_ data: Data, source: String, group: String) throws -> Self {
-        guard data.count <= DeckSyncEnvelope.maximumPayload else { throw DeckError.message("Shared configuration exceeds 60 KB.") }
+        guard data.count <= DeckSyncTransfer.maximumSnapshot else { throw DeckError.message("Shared configuration exceeds 4 MB.") }
         let envelope = try JSONDecoder().decode(Self.self, from: data)
         guard envelope.schema == 2, envelope.source == source, envelope.document.group == group else { throw DeckError.message("Shared group or peer mismatch.") }
         try envelope.document.validate()
