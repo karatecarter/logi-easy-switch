@@ -1,6 +1,7 @@
-# Logi Easy Switch
+# Switchboard
 
-Experimental macOS tooling for controlling Logitech Easy-Switch devices. The
+A macOS menu bar utility for keyboard-driven shortcuts, Home Assistant actions,
+and Logitech Easy-Switch device control. The
 native app talks HID++ directly to connected Bluetooth devices through macOS
 IOKit; it does not depend on Logi Options+ or its private local service.
 
@@ -19,12 +20,12 @@ updates may change or remove the private API.
 The menu-bar app is native AppKit/SwiftUI and follows the same build model as
 CenterStage and DisplayGain: it only requires `swift` on `PATH`, not Xcode or
 the Xcode Command Line Tools. Run `Scripts/make-app.sh`. The result is a
-self-contained `dist/Logi Easy Switch.app`; a Mac running that app does not
+self-contained `dist/Switchboard.app`; a Mac running that app does not
 need Swift or Node.
 
 ## Menu-bar app
 
-Run the built app from `dist/Logi Easy Switch.app`. Its normal menu lists only
+Run the built app from `dist/Switchboard.app`. Its normal menu lists only
 targets paired to both default devices, and switches that pair together.
 
 Hold Option while the menu is open to replace that list with a submenu for each
@@ -32,21 +33,43 @@ available Logitech keyboard or mouse, allowing independent device switching.
 Settings saves the default mouse/keyboard and lets you record global hotkeys
 for every default-pair target and every paired device-specific target.
 
-The first launch may require enabling Logi Easy Switch in System Settings →
+The first launch may require enabling Switchboard in System Settings →
 Privacy & Security → Input Monitoring and then relaunching the app. Direct
 HID++ access currently discovers devices connected to this Mac over Bluetooth.
 The legacy Node CLI below still uses the older Options+ socket protocol.
+
+The app keeps its original bundle identifier, Keychain services, MQTT topics,
+and configuration paths so existing settings and integrations remain compatible.
+Swift source modules and the repository directory retain their original names.
+
+## Shortcut launcher
+
+Use **Shortcuts Settings…** in the menu bar to configure a virtual shortcut deck,
+then open it with **Show Shortcuts** or its configurable global hotkey. Buttons
+support per-folder keyboard keys (including numpad), nested folders, Home
+Assistant actions and templates, Apple Shortcuts, AppleScript, Python, microphone
+mute, volume controls, and app-specific camera commands. Global and per-button
+dismissal rules control whether it stays open.
+
+Shortcut configurations can sync through the existing MQTT broker: choose one
+publishing Mac and configure the others to follow its publisher ID under
+**Shortcuts Settings → Shortcut sync**. Credentials and machine-specific paths stay local.
+
+See [launcher setup and Stream Deck adapter design](docs/SHORTCUTS.md) for
+configuration, limitations and the future plugin framework.
 
 ## Optional Home Assistant network switching
 
 Install and configure Home Assistant's MQTT integration (the Mosquitto Broker
 app is the simplest broker option), then enable **Home Assistant** in the app's
-Settings on every Mac that should participate. Enter the same broker address
-and credentials on each Mac and select the Easy-Switch target that represents
+Settings on every Mac that should participate. Use a TLS listener with a certificate trusted by macOS (usually port 8883).
+Plaintext MQTT connections are rejected, including previously saved non-TLS configurations.
+Enter the same broker address and namespace on each Mac, use dedicated
+broker credentials with restricted topic permissions, and select the Easy-Switch target that represents
 that computer.
 
-Each app subscribes to a shared target command. Only the Mac that currently has
-the default keyboard and mouse connected acts on the command, so selecting a
+Each app subscribes to a shared target command. Each Mac switches whichever of
+the selected keyboard and mouse are currently connected to it, so selecting a
 computer in any app—or in Home Assistant—moves the devices there. MQTT
 Discovery creates these Home Assistant entities automatically:
 
@@ -54,8 +77,10 @@ Discovery creates these Home Assistant entities automatically:
 - **Current computer** sensor
 - An availability sensor for each participating Mac
 
-Broker passwords are stored in the macOS Keychain. TLS can be enabled for
-brokers configured with a trusted certificate. Local switching continues to
+Broker passwords are stored in the macOS Keychain. TLS is required.
+Retained commands and unknown or hidden targets are ignored. Use a different
+MQTT namespace for each independent installation; the default preserves existing
+topic names. See [workplace deployment requirements](security/DEPLOYMENT.md). Local switching continues to
 work when the MQTT feature is disabled.
 
 ## Commands

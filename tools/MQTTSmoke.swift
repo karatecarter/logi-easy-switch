@@ -5,18 +5,22 @@ struct MQTTSmoke {
     static func main() {
         var configuration = MQTTConfiguration()
         configuration.enabled = true
-        configuration.host = "127.0.0.1"
-        configuration.port = 18884
-        let client = MQTTClient(configuration: configuration, password: "", clientID: "logi-easy-switch-smoke")
+        // Use an approved TLS broker with a system-trusted certificate.
+        let environment = ProcessInfo.processInfo.environment
+        configuration.host = environment["LOGI_TEST_MQTT_HOST"] ?? "localhost"
+        configuration.port = Int(environment["LOGI_TEST_MQTT_PORT"] ?? "8883") ?? 8883
+        configuration.username = environment["LOGI_TEST_MQTT_USERNAME"] ?? ""
+        configuration.tlsServerName = environment["LOGI_TEST_MQTT_TLS_SERVER_NAME"] ?? ""
+        let client = MQTTClient(configuration: configuration, password: environment["LOGI_TEST_MQTT_PASSWORD"] ?? "", clientID: "logi-easy-switch-smoke")
         let finished = DispatchSemaphore(value: 0)
-        var succeeded = false
+        let result = SmokeResult()
         client.onConnected = {
             client.subscribe("logi-easy-switch/smoke")
             client.publish(topic: "logi-easy-switch/smoke", string: "hello")
         }
-        client.onMessage = { topic, payload in
+        client.onMessage = { topic, payload, _ in
             if topic == "logi-easy-switch/smoke", String(data: payload, encoding: .utf8) == "hello" {
-                succeeded = true
+                result.markSucceeded()
                 finished.signal()
             }
         }
@@ -25,11 +29,19 @@ struct MQTTSmoke {
             finished.signal()
         }
         client.connect()
-        guard finished.wait(timeout: .now() + 5) == .success, succeeded else {
+        guard finished.wait(timeout: .now() + 5) == .success, result.succeeded else {
             fputs("MQTT smoke test failed\n", stderr)
             exit(1)
         }
         client.disconnect()
         print("MQTT connect, subscribe, publish, and receive passed")
     }
+}
+
+private final class SmokeResult: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+
+    var succeeded: Bool { lock.withLock { value } }
+    func markSucceeded() { lock.withLock { value = true } }
 }

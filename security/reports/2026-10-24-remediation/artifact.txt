@@ -1,0 +1,38 @@
+$ git rev-parse HEAD
+c0e7f6b42c5f8b89502ad1d528ca8ee635e440eb
+Exit: 0
+
+$ codesign -dv --verbose=4 dist/Logi Easy Switch.app
+Executable=/Users/dan/repos/logi-easy-switch/dist/Logi Easy Switch.app/Contents/MacOS/LogiEasySwitch
+Identifier=local.logi-easy-switch
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20500 size=1943 flags=0x10002(adhoc,runtime) hashes=54+3 location=embedded
+VersionPlatform=1
+VersionMin=917504
+VersionSDK=1704448
+Hash type=sha256 size=32
+CandidateCDHash sha256=61a31b2b6594faad70266920d3096daef54247da
+CandidateCDHashFull sha256=61a31b2b6594faad70266920d3096daef54247da22d07a3c6225f3e1e8df1b4c
+Hash choices=sha256
+CMSDigest=61a31b2b6594faad70266920d3096daef54247da22d07a3c6225f3e1e8df1b4c
+CMSDigestType=2
+Executable Segment base=0
+Executable Segment limit=344064
+Executable Segment flags=0x1
+Page size=16384
+CDHash=61a31b2b6594faad70266920d3096daef54247da
+Signature=adhoc
+Info.plist entries=11
+TeamIdentifier=not set
+Runtime Version=26.2.0
+Sealed Resources version=2 rules=13 files=1
+Internal requirements count=0 size=12
+Exit: 0
+
+$ codesign --verify --deep --strict dist/Logi Easy Switch.app
+Exit: 0
+
+$ shasum -a 256 dist/Logi Easy Switch.app/Contents/MacOS/LogiEasySwitch
+6126020a763bcc0e9a2d7271658fb0a51f560ec85857f73f8026d9fd498afab7  dist/Logi Easy Switch.app/Contents/MacOS/LogiEasySwitch
+Exit: 0
+

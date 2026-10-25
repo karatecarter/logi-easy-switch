@@ -1,0 +1,34 @@
+$ codesign -dv --verbose=4 /Applications/Logi Easy Switch.app
+Executable=/Applications/Logi Easy Switch.app/Contents/MacOS/LogiEasySwitch
+Identifier=local.logi-easy-switch
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20500 size=1975 flags=0x10002(adhoc,runtime) hashes=55+3 location=embedded
+VersionPlatform=1
+VersionMin=917504
+VersionSDK=1704448
+Hash type=sha256 size=32
+CandidateCDHash sha256=539b61f6da5fd2fcd7bab80e253ff02bc4dfcc59
+CandidateCDHashFull sha256=539b61f6da5fd2fcd7bab80e253ff02bc4dfcc5988f0bbc8b0f5c0769c4aa93a
+Hash choices=sha256
+CMSDigest=539b61f6da5fd2fcd7bab80e253ff02bc4dfcc5988f0bbc8b0f5c0769c4aa93a
+CMSDigestType=2
+Executable Segment base=0
+Executable Segment limit=360448
+Executable Segment flags=0x1
+Page size=16384
+CDHash=539b61f6da5fd2fcd7bab80e253ff02bc4dfcc59
+Signature=adhoc
+Info.plist entries=11
+TeamIdentifier=not set
+Runtime Version=26.2.0
+Sealed Resources version=2 rules=13 files=1
+Internal requirements count=0 size=12
+Exit: 0
+
+$ codesign --verify --deep --strict /Applications/Logi Easy Switch.app
+Exit: 0
+
+$ shasum -a 256 /Applications/Logi Easy Switch.app/Contents/MacOS/LogiEasySwitch
+371cb2de2dc401fa8e61dffada648e1e2f1cea3f3687f452415b08e64366878f  /Applications/Logi Easy Switch.app/Contents/MacOS/LogiEasySwitch
+Exit: 0
+

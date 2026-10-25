@@ -14,16 +14,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var deviceLoadError: String?
     private let defaults = DeviceDefaults()
     private let hotkeys = HotkeyManager()
+    private let deckStore = DeckStore()
+    private lazy var deck = DeckController(store: deckStore)
+    private lazy var shortcutSync = DeckSyncCoordinator(store: deckStore)
+    private var deckSettingsWindow: NSWindow?
     private let mqtt = MQTTCoordinator()
     private let usbTriggerMonitor = USBTriggerMonitor()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installApplicationMenu()
+        deckStore.onChange = { [weak self] in
+            self?.installHotkeys()
+            self?.shortcutSync.localConfigurationChanged()
+        }
+        NotificationCenter.default.addObserver(self, selector: #selector(showDeck), name: .showDeck, object: nil)
         HIDPPTransport.requestInputMonitoringAccessIfNeeded()
         statusItem.button?.image = Self.menuBarIcon()
         statusItem.button?.title = ""
         statusItem.button?.isHidden = false
-        statusItem.button?.toolTip = "Logi Easy Switch"
+        statusItem.button?.toolTip = "Switchboard"
         menu.delegate = self
         statusItem.menu = menu
         mqtt.onTargetRequested = { [weak self] target in
@@ -54,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "Quit Logi Easy Switch", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit Switchboard", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
 
@@ -74,8 +83,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        deck.hide()
         usbTriggerMonitor.stop()
         mqtt.stop()
+        shortcutSync.stop()
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -177,6 +188,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func rebuildMenu() {
         menu.removeAllItems()
+        let launcher = NSMenuItem(title: "Show Shortcuts", action: #selector(showDeck), keyEquivalent: "")
+        launcher.target = self
+        menu.addItem(launcher)
+        let deckSettings = NSMenuItem(title: "Shortcuts Settings…", action: #selector(openDeckSettings), keyEquivalent: "")
+        deckSettings.target = self
+        menu.addItem(deckSettings)
+        menu.addItem(.separator())
         let selected = defaults.selectedDevices(from: cachedDevices)
         if defaults.mqtt.enabled {
             let status = NSMenuItem(title: "Home Assistant: \(mqtt.state.label)", action: nil, keyEquivalent: "")
@@ -214,7 +232,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refresh.target = self
         menu.addItem(refresh)
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Quit Logi Easy Switch", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
+        let quit = NSMenuItem(title: "Quit Switchboard", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
         menu.addItem(quit)
     }
 
@@ -374,7 +392,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.refreshMenu()
         }, targets: targets, machineNames: machineNames))
         let window = NSWindow(contentViewController: controller)
-        window.title = "Logi Easy Switch Settings"
+        window.title = "Switchboard Settings"
         window.styleMask = [.titled, .closable]
         window.setContentSize(NSSize(width: 620, height: 720))
         window.isReleasedWhenClosed = false
@@ -434,13 +452,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func installHotkeys() {
         let visibleIDs = Set(shortcutTargets().filter { defaults.isMachineVisible($0.machineName) }.map(\.id))
-        let visibleHotkeys = defaults.hotkeys.filter { visibleIDs.contains($0.key) }
-        hotkeys.replace(with: visibleHotkeys) { [weak self] target in
-            Task { @MainActor in self?.runHotkey(target) }
+        var visibleHotkeys = defaults.hotkeys.filter { visibleIDs.contains($0.key) }
+        if let shortcut = deckStore.configuration.hotkey {
+            visibleHotkeys = visibleHotkeys.filter { $0.value.keyCode != shortcut.keyCode || $0.value.modifiers != shortcut.modifiers }
+            visibleHotkeys["deck"] = shortcut
         }
+        let failures = hotkeys.replace(with: visibleHotkeys) { [weak self] target in
+            Task { @MainActor in
+                if target == "deck" { self?.deck.toggle() } else { self?.runHotkey(target) }
+            }
+        }
+        deckStore.hotkeyError = failures.contains("deck") ? "The launcher hotkey is unavailable. Choose a different key combination." : nil
     }
 
     private func configureMQTT() {
+        shortcutSync.configure(broker: defaults.mqtt, password: MQTTPasswordStore.load())
         mqtt.configure(
             defaults.mqtt,
             password: MQTTPasswordStore.load(),
@@ -480,6 +506,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 } catch { await MainActor.run { self.showError(error) } }
             }
         }
+    }
+
+    @objc private func showDeck() { deck.toggle() }
+
+    @objc private func openDeckSettings() {
+        if let window = deckSettingsWindow {
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            let window = NSWindow(contentViewController: NSHostingController(rootView: DeckSettingsView(store: deckStore, sync: shortcutSync)))
+            window.title = "Shortcuts Settings"
+            window.styleMask = [.titled, .closable, .resizable]
+            window.isReleasedWhenClosed = false
+            window.center()
+            window.makeKeyAndOrderFront(nil)
+            deckSettingsWindow = window
+        }
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private static func menuBarIcon() -> NSImage {

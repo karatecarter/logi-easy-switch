@@ -2,7 +2,7 @@ import AppKit
 
 @main
 @MainActor
-struct LogiEasySwitchMain {
+struct SwitchboardMain {
     private static let delegate = AppDelegate()
 
     static func main() {

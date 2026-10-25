@@ -1,0 +1,76 @@
+$ git rev-parse HEAD
+c0e7f6b42c5f8b89502ad1d528ca8ee635e440eb
+Exit: 0
+
+$ git rev-parse --is-shallow-repository
+false
+Exit: 0
+
+$ gitleaks version
+8.30.1
+Exit: 0
+
+$ /tmp/logi-security-tools/bin/semgrep --version
+1.182.1
+Exit: 0
+
+$ swift --version
+Apple Swift version 6.2.3 (swiftlang-6.2.3.3.21 clang-1700.6.3.2)
+Target: arm64-apple-macosx26.0
+swift-driver version: 1.127.14.1 Exit: 0
+
+$ node --version
+v24.14.0
+Exit: 0
+
+$ npm --version
+11.9.0
+Exit: 0
+
+$ swift package show-dependencies --format json
+{
+  "identity": "logi-easy-switch",
+  "name": "LogiEasySwitch",
+  "url": "/Users/dan/repos/logi-easy-switch",
+  "version": "unspecified",
+  "path": "/Users/dan/repos/logi-easy-switch",
+  "dependencies": [
+
+  ]
+}
+
+Exit: 0
+
+$ codesign -dv --verbose=4 /Applications/Logi Easy Switch.app
+Executable=/Applications/Logi Easy Switch.app/Contents/MacOS/LogiEasySwitch
+Identifier=local.logi-easy-switch
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20400 size=1871 flags=0x2(adhoc) hashes=52+3 location=embedded
+VersionPlatform=1
+VersionMin=917504
+VersionSDK=1704448
+Hash type=sha256 size=32
+CandidateCDHash sha256=9c4ef59f0f004dc0f4aec62e82d5ec0266ab2954
+CandidateCDHashFull sha256=9c4ef59f0f004dc0f4aec62e82d5ec0266ab29547a2ed0ff3fe5d889214a1ec3
+Hash choices=sha256
+CMSDigest=9c4ef59f0f004dc0f4aec62e82d5ec0266ab29547a2ed0ff3fe5d889214a1ec3
+CMSDigestType=2
+Executable Segment base=0
+Executable Segment limit=327680
+Executable Segment flags=0x1
+Page size=16384
+CDHash=9c4ef59f0f004dc0f4aec62e82d5ec0266ab2954
+Signature=adhoc
+Info.plist entries=11
+TeamIdentifier=not set
+Sealed Resources version=2 rules=13 files=1
+Internal requirements count=0 size=12
+Exit: 0
+
+$ codesign --verify --deep --strict /Applications/Logi Easy Switch.app
+Exit: 0
+
+$ shasum -a 256 /Applications/Logi Easy Switch.app/Contents/MacOS/LogiEasySwitch
+348492bf685a1a6a652975feed49ac222e797bc7ab980a28f4b6ab3a208ac695  /Applications/Logi Easy Switch.app/Contents/MacOS/LogiEasySwitch
+Exit: 0
+

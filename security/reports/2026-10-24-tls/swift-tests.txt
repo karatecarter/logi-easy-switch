@@ -1,0 +1,50 @@
+[0/1] Planning build
+Building for debugging...
+[0/5] Write sources
+[1/5] Write swift-version--58304C5D6DBC2206.txt
+[3/7] Compiling LogiEasySwitchApp MQTTClient.swift
+[4/7] Emitting module LogiEasySwitchApp
+[4/9] Write Objects.LinkFileList
+[5/9] Linking LogiEasySwitch
+[6/9] Applying LogiEasySwitch
+[8/10] Emitting module LogiEasySwitchAppTests
+[8/10] Write Objects.LinkFileList
+[9/10] Linking LogiEasySwitchPackageTests
+Build complete! (2.70s)
+Test Suite 'All tests' started at 2026-10-24 20:28:18.454.
+Test Suite 'LogiEasySwitchPackageTests.xctest' started at 2026-10-24 20:28:18.455.
+Test Suite 'SecurityTests' started at 2026-10-24 20:28:18.455.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testAllTruncatedHIDReportsRejected]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testAllTruncatedHIDReportsRejected]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testBufferLimitRejectsExcessiveSingleRead]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testBufferLimitRejectsExcessiveSingleRead]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testCertificateHostnameValidationAndMigration]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testCertificateHostnameValidationAndMigration]' passed (0.002 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testFragmentedAndCoalescedMQTTPackets]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testFragmentedAndCoalescedMQTTPackets]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testHIDHostCountAndChannelBounds]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testHIDHostCountAndChannelBounds]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testMalformedAndOversizedLengthsAreRejectedImmediately]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testMalformedAndOversizedLengthsAreRejectedImmediately]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testMaximumPacketCanArriveInFragments]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testMaximumPacketCanArriveInFragments]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testNamespacesRejectWildcardsAndPaths]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testNamespacesRejectWildcardsAndPaths]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testPlaintextClientFailsBeforeConnecting]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testPlaintextClientFailsBeforeConnecting]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testPublicationRejectsMalformedTopicsAndUnsupportedQoS]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testPublicationRejectsMalformedTopicsAndUnsupportedQoS]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testRetainedCommandAndUnknownTargetCannotSwitch]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testRetainedCommandAndUnknownTargetCannotSwitch]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testTLSRequiredIncludingOldSavedSettings]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testTLSRequiredIncludingOldSavedSettings]' passed (0.000 seconds).
+Test Suite 'SecurityTests' passed at 2026-10-24 20:28:18.463.
+	 Executed 12 tests, with 0 failures (0 unexpected) in 0.006 (0.008) seconds
+Test Suite 'LogiEasySwitchPackageTests.xctest' passed at 2026-10-24 20:28:18.463.
+	 Executed 12 tests, with 0 failures (0 unexpected) in 0.006 (0.008) seconds
+Test Suite 'All tests' passed at 2026-10-24 20:28:18.463.
+	 Executed 12 tests, with 0 failures (0 unexpected) in 0.006 (0.009) seconds
+◇ Test run started.
+↳ Testing Library Version: 1501
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.

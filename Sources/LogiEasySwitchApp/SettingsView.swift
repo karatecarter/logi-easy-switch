@@ -147,6 +147,7 @@ struct SettingsView: View {
     @State private var mqtt = MQTTConfiguration()
     @State private var mqttPassword = ""
     @State private var mqttTestStatus: String?
+    @State private var mqttPasswordError: String?
     @State private var testingMQTT = false
     @State private var usbTrigger = USBTriggerConfiguration()
     @StateObject private var capture = ShortcutCaptureModel()
@@ -174,7 +175,7 @@ struct SettingsView: View {
                 ForEach(keyboards) { device in Text(device.name).tag(device.id) }
             }
 
-            Toggle("Start Logi Easy Switch at login", isOn: $startAtLogin)
+            Toggle("Start Switchboard at login", isOn: $startAtLogin)
                 .onChange(of: startAtLogin) { _, enabled in
                     do {
                         try LaunchAtLogin.setEnabled(enabled)
@@ -209,8 +210,22 @@ struct SettingsView: View {
                             .frame(width: 120)
                         Toggle("Use TLS", isOn: $mqtt.useTLS)
                     }
+                    TextField("Certificate hostname (optional)", text: $mqtt.tlsServerName)
+                    Text("Leave blank to verify the broker address. If connecting through a local address, enter the DNS hostname on the broker’s trusted certificate.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("MQTT namespace", text: $mqtt.topicPrefix)
+                    Text("Use the same namespace on participating Macs and a different namespace for each independent installation.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     TextField("Username", text: $mqtt.username)
                     SecureField("Password", text: $mqttPassword)
+                    if let mqttPasswordError {
+                        Text(mqttPasswordError).foregroundStyle(.red)
+                    }
+                    if let message = mqtt.validationMessage {
+                        Text(message).font(.caption).foregroundStyle(.red)
+                    }
 
                     Picker("This computer", selection: $mqtt.computerName) {
                         if !machineNames.contains(mqtt.computerName) {
@@ -355,8 +370,13 @@ struct SettingsView: View {
             didSave()
         }
         .onChange(of: mqttPassword) { _, value in
-            MQTTPasswordStore.save(value)
-            didSave()
+            do {
+                try MQTTPasswordStore.save(value)
+                mqttPasswordError = nil
+                didSave()
+            } catch {
+                mqttPasswordError = error.localizedDescription
+            }
         }
         .onChange(of: usbTrigger.deviceID) { _, deviceID in
             if let device = usbDevices.first(where: { $0.id == deviceID }) {

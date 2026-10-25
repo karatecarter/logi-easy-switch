@@ -48,8 +48,7 @@ struct HIDPPTransport {
                 throw LogiError.protocolError("\(device.name) does not support Easy-Switch.")
             }
             let changeState = try session.request(feature: changeIndex, function: 0)
-            let hostCount = Int(changeState[0])
-            let currentHost = Int(changeState[1])
+            let (hostCount, currentHost) = try HIDPPResponse.hostState(changeState)
 
             guard let infoIndex = try featureIndex(hostsInfoFeature, session: session) else {
                 return (0..<hostCount).map {
@@ -136,7 +135,7 @@ struct HIDPPTransport {
 
     private func candidates() throws -> [HIDCandidate] {
         guard IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted else {
-            throw LogiError.unavailable("Allow Logi Easy Switch in System Settings → Privacy & Security → Input Monitoring, then relaunch it.")
+            throw LogiError.unavailable("Allow Switchboard in System Settings → Privacy & Security → Input Monitoring, then relaunch it.")
         }
         let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         IOHIDManagerSetDeviceMatching(manager, [kIOHIDVendorIDKey: logitechVendorID] as CFDictionary)
@@ -195,7 +194,7 @@ private final class HIDPPSession {
         let result = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
         guard result == kIOReturnSuccess else {
             inputBuffer.deallocate()
-            throw LogiError.unavailable("macOS denied access to the Logitech device. Allow Logi Easy Switch in Privacy & Security > Input Monitoring, then relaunch it.")
+            throw LogiError.unavailable("macOS denied access to the Logitech device. Allow Switchboard in Privacy & Security > Input Monitoring, then relaunch it.")
         }
         isOpen = true
         let context = Unmanaged.passUnretained(self).toOpaque()
@@ -227,7 +226,7 @@ private final class HIDPPSession {
                     throw LogiError.requestFailed("HID++ error \(report[5]) from the Logitech device.")
                 }
                 if report[2] == feature, report[3] == functionAndSoftwareID {
-                    return Array(report[4..<min(report.count, longReportLength)])
+                    return try HIDPPResponse.payload(report)
                 }
             }
             CFRunLoopRunInMode(CFRunLoopMode.defaultMode, 0.05, true)
@@ -253,7 +252,10 @@ private final class HIDPPSession {
     }
 
     fileprivate func receive(_ report: UnsafePointer<UInt8>, length: CFIndex) {
-        guard length > 0 else { return }
+        guard length == longReportLength, report[0] == longReportID, report[1] == directDeviceIndex else { return }
+        // A peripheral can emit unsolicited reports while we wait for a reply.
+        // Keep the queue bounded and retain the most recent reports.
+        if reports.count >= 64 { reports.removeFirst() }
         reports.append(Array(UnsafeBufferPointer(start: report, count: length)))
     }
 

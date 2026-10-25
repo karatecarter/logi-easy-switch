@@ -1,0 +1,9 @@
+
+    ○
+    │╲
+    │ ○
+    ○ ░
+    ░    gitleaks
+
+8:29PM INF scanned ~138061 bytes (138.06 KB) in 39.7ms
+8:29PM INF no leaks found

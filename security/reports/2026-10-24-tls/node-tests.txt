@@ -1,0 +1,16 @@
+
+> logi-easy-switch@0.1.0 test
+> node --test
+
+✔ encodes and decodes an Options+ JSON frame (1.951291ms)
+✔ retains a partial frame (0.176ms)
+✔ rejects malformed and oversized IPC frame lengths (0.436125ms)
+✔ socket discovery rejects files and symlinks and accepts an owned socket (8.988292ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 115.606667

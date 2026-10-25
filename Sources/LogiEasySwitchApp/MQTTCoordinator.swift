@@ -23,8 +23,8 @@ final class MQTTCoordinator: ObservableObject {
     var onTargetRequested: ((String) -> Void)?
     var onStateChanged: (() -> Void)?
 
-    private let commandTopic = "logi-easy-switch/command/target"
-    private let stateTopic = "logi-easy-switch/state/current-target"
+    private var commandTopic: String { "\(configuration.topicPrefix)/command/target" }
+    private var stateTopic: String { "\(configuration.topicPrefix)/state/current-target" }
     private var configuration = MQTTConfiguration()
     private var password = ""
     private var targets: [String] = []
@@ -36,6 +36,8 @@ final class MQTTCoordinator: ObservableObject {
 
     func configure(_ configuration: MQTTConfiguration, password: String, targets: [String]) {
         let connectionChanged = self.configuration != configuration || self.password != password
+        // Report the old namespace offline before replacing its configuration.
+        if connectionChanged { publishMacAvailability(online: false) }
         self.configuration = configuration
         self.password = password
         self.targets = Array(Set(targets.filter { !$0.isEmpty })).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
@@ -46,7 +48,7 @@ final class MQTTCoordinator: ObservableObject {
             publishMacAvailability(online: false)
             client?.disconnect()
             client = nil
-            state = configuration.enabled ? .failed("Broker settings incomplete") : .disabled
+            state = configuration.enabled ? .failed(configuration.validationMessage ?? "Broker settings incomplete") : .disabled
             return
         }
         if connectionChanged || client == nil {
@@ -61,7 +63,7 @@ final class MQTTCoordinator: ObservableObject {
     }
 
     func requestTarget(_ target: String) -> Bool {
-        guard state == .connected else { return false }
+        guard state == .connected, targets.contains(target) else { return false }
         currentTarget = target
         onStateChanged?()
         client?.publish(topic: commandTopic, string: target)
@@ -97,7 +99,7 @@ final class MQTTCoordinator: ObservableObject {
         guard configuration.isUsable else { return }
         state = .connecting
         let storedID = stableClientID()
-        let availabilityTopic = "logi-easy-switch/mac/\(storedID)/availability"
+        let availabilityTopic = "\(configuration.topicPrefix)/mac/\(storedID)/availability"
         let mqtt = MQTTClient(
             configuration: configuration,
             password: password,
@@ -120,10 +122,15 @@ final class MQTTCoordinator: ObservableObject {
                 self.onStateChanged?()
             }
         }
-        mqtt.onMessage = { [weak self, weak mqtt] topic, payload in
+        let subscribedTopics = [commandTopic, stateTopic]
+        mqtt.onMessage = { [weak self, weak mqtt] topic, payload, retained in
+            guard subscribedTopics.contains(topic), payload.count <= 1_024 else { return }
             Task { @MainActor in
                 guard let self, self.client === mqtt, let value = String(data: payload, encoding: .utf8) else { return }
-                if topic == self.commandTopic { self.onTargetRequested?(value) }
+                if topic == self.commandTopic,
+                   let target = MQTTCommandPolicy.acceptedTarget(payload: payload, retained: retained, targets: self.targets) {
+                    self.onTargetRequested?(target)
+                }
                 if topic == self.stateTopic {
                     self.currentTarget = value
                     self.onStateChanged?()
@@ -153,19 +160,21 @@ final class MQTTCoordinator: ObservableObject {
         reconnectDelay = min(reconnectDelay * 2, 30)
     }
 
+    private var discoveryID: String { configuration.topicPrefix == "logi-easy-switch" ? "logi_easy_switch" : "logi_namespace_\(configuration.topicPrefix)" }
+
     private func publishDiscovery() {
         guard configuration.discoveryEnabled, state == .connected else { return }
         let options = targets.isEmpty ? [configuration.computerName] : targets
         let device: [String: Any] = [
-            "identifiers": ["logi-easy-switch-network"],
-            "name": "Logi Easy Switch",
-            "manufacturer": "Logi Easy Switch",
+            "identifiers": ["\(configuration.topicPrefix)-network"],
+            "name": "Switchboard",
+            "manufacturer": "Switchboard",
             "model": "Network Controller",
         ]
-        let origin: [String: Any] = ["name": "Logi Easy Switch", "sw_version": "0.2.0", "support_url": "https://github.com/karatecarter/logi-easy-switch"]
+        let origin: [String: Any] = ["name": "Switchboard", "sw_version": "0.2.0", "support_url": "https://github.com/karatecarter/logi-easy-switch"]
         let select: [String: Any] = [
             "name": "Target computer",
-            "unique_id": "logi_easy_switch_target",
+            "unique_id": "\(discoveryID)_target",
             "command_topic": commandTopic,
             "state_topic": stateTopic,
             "options": options,
@@ -175,7 +184,7 @@ final class MQTTCoordinator: ObservableObject {
         ]
         let sensor: [String: Any] = [
             "name": "Current computer",
-            "unique_id": "logi_easy_switch_current_computer",
+            "unique_id": "\(discoveryID)_current_computer",
             "state_topic": stateTopic,
             "device": device,
             "origin": origin,
@@ -184,23 +193,23 @@ final class MQTTCoordinator: ObservableObject {
         let id = stableClientID()
         let availability: [String: Any] = [
             "name": "\(configuration.computerName) availability",
-            "unique_id": "logi_easy_switch_\(id)_availability",
-            "state_topic": "logi-easy-switch/mac/\(id)/availability",
+            "unique_id": "\(discoveryID)_\(id)_availability",
+            "state_topic": "\(configuration.topicPrefix)/mac/\(id)/availability",
             "payload_on": "online",
             "payload_off": "offline",
             "device_class": "connectivity",
             "device": device,
             "origin": origin,
         ]
-        publishJSON(select, topic: "homeassistant/select/logi_easy_switch/target/config")
-        publishJSON(sensor, topic: "homeassistant/sensor/logi_easy_switch/current_computer/config")
-        publishJSON(availability, topic: "homeassistant/binary_sensor/logi_easy_switch/\(id)_availability/config")
+        publishJSON(select, topic: "homeassistant/select/\(discoveryID)/target/config")
+        publishJSON(sensor, topic: "homeassistant/sensor/\(discoveryID)/current_computer/config")
+        publishJSON(availability, topic: "homeassistant/binary_sensor/\(discoveryID)/\(id)_availability/config")
     }
 
     private func publishMacAvailability(online: Bool) {
         let id = stableClientID()
-        client?.publish(topic: "logi-easy-switch/mac/\(id)/availability", string: online ? "online" : "offline", retain: true)
-        client?.publish(topic: "logi-easy-switch/mac/\(id)/name", string: configuration.computerName, retain: true)
+        client?.publish(topic: "\(configuration.topicPrefix)/mac/\(id)/availability", string: online ? "online" : "offline", retain: true)
+        client?.publish(topic: "\(configuration.topicPrefix)/mac/\(id)/name", string: configuration.computerName, retain: true)
     }
 
     private func publishJSON(_ object: [String: Any], topic: String) {

@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import Security
 
 final class MQTTClient: @unchecked Sendable {
     enum ClientError: LocalizedError {
@@ -9,7 +10,7 @@ final class MQTTClient: @unchecked Sendable {
 
         var errorDescription: String? {
             switch self {
-            case .invalidConfiguration: "The MQTT broker settings are incomplete."
+            case .invalidConfiguration: "MQTT requires TLS and valid broker settings within the supported lengths."
             case .connectionRefused(let code): "The MQTT broker refused the connection (code \(code))."
             case .disconnected(let message): message
             }
@@ -17,7 +18,7 @@ final class MQTTClient: @unchecked Sendable {
     }
 
     var onConnected: (@Sendable () -> Void)?
-    var onMessage: (@Sendable (String, Data) -> Void)?
+    var onMessage: (@Sendable (String, Data, Bool) -> Void)?
     var onDisconnected: (@Sendable (Error?) -> Void)?
 
     private let configuration: MQTTConfiguration
@@ -26,7 +27,9 @@ final class MQTTClient: @unchecked Sendable {
     private let will: (topic: String, payload: String)?
     private let queue = DispatchQueue(label: "local.logi-easy-switch.mqtt")
     private var connection: NWConnection?
-    private var incoming = Data()
+    private var decoder = MQTTPacketDecoder()
+    private var packetDeadline: DispatchWorkItem?
+    private var handshakeDeadline: DispatchWorkItem?
     private var keepAlive: DispatchSourceTimer?
     private var nextPacketID: UInt16 = 1
     private(set) var isConnected = false
@@ -39,20 +42,38 @@ final class MQTTClient: @unchecked Sendable {
     }
 
     func connect() {
+        queue.async { [weak self] in self?.connectOnQueue() }
+    }
+
+    private func connectOnQueue() {
         guard configuration.isUsable, let port = NWEndpoint.Port(rawValue: UInt16(configuration.port)) else {
             onDisconnected?(ClientError.invalidConfiguration)
             return
         }
-        let parameters: NWParameters = configuration.useTLS ? .tls : .tcp
+        guard password.utf8.count <= 4_096, clientID.utf8.count <= 256,
+              (will?.topic.utf8.count ?? 0) <= 4_096, (will?.payload.utf8.count ?? 0) <= 4_096 else {
+            onDisconnected?(ClientError.invalidConfiguration)
+            return
+        }
+        let tls = NWProtocolTLS.Options()
+        if !configuration.tlsServerName.isEmpty {
+            // Select the expected certificate identity; Apple's normal chain,
+            // expiry, and hostname checks still apply. Never bypass verification.
+            sec_protocol_options_set_tls_server_name(tls.securityProtocolOptions, configuration.tlsServerName)
+        }
+        let parameters = NWParameters(tls: tls, tcp: NWProtocolTCP.Options())
         let connection = NWConnection(host: NWEndpoint.Host(configuration.host), port: port, using: parameters)
         self.connection = connection
         connection.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
             switch state {
             case .ready:
+                let timeout = DispatchWorkItem { [weak self] in self?.finish(ClientError.disconnected("MQTT handshake timed out.")) }
+                self.handshakeDeadline = timeout
+                self.queue.asyncAfter(deadline: .now() + 15, execute: timeout)
                 self.sendRaw(self.connectPacket())
                 self.receiveNext()
-            case .failed(let error): self.finish(error)
+            case .waiting(let error), .failed(let error): self.finish(error)
             case .cancelled: self.finish(nil)
             default: break
             }
@@ -64,17 +85,17 @@ final class MQTTClient: @unchecked Sendable {
         queue.async { [weak self] in
             guard let self else { return }
             if self.isConnected { self.sendRaw(Data([0xe0, 0x00])) }
-            self.keepAlive?.cancel()
-            self.keepAlive = nil
-            self.connection?.cancel()
-            self.connection = nil
-            self.isConnected = false
+            self.finish(nil)
         }
     }
 
     func subscribe(_ topic: String) {
         queue.async { [weak self] in
             guard let self, self.isConnected else { return }
+            guard !topic.isEmpty, topic.utf8.count <= 4_096 else {
+                self.finish(LogiError.protocolError("MQTT topic exceeds the limit."))
+                return
+            }
             var body = Data()
             let id = self.nextPacketID
             self.nextPacketID = self.nextPacketID == UInt16.max ? 1 : self.nextPacketID + 1
@@ -88,8 +109,16 @@ final class MQTTClient: @unchecked Sendable {
     func publish(topic: String, payload: Data, retain: Bool = false) {
         queue.async { [weak self] in
             guard let self, self.isConnected else { return }
+            guard !topic.isEmpty, topic.utf8.count <= 4_096 else {
+                self.finish(LogiError.protocolError("MQTT topic exceeds the limit."))
+                return
+            }
             var body = Data()
             body.appendMQTTString(topic)
+            guard body.count + payload.count <= MQTTPacketDecoder.maximumBodySize else {
+                self.finish(LogiError.protocolError("MQTT publication exceeds the limit."))
+                return
+            }
             body.append(payload)
             self.sendPacket(header: retain ? 0x31 : 0x30, body: body)
         }
@@ -135,43 +164,60 @@ final class MQTTClient: @unchecked Sendable {
     }
 
     private func receiveNext() {
-        connection?.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self] data, _, complete, error in
-            guard let self else { return }
-            if let data { self.incoming.append(data); self.parsePackets() }
+        guard let active = connection else { return }
+        active.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { [weak self, weak active] data, _, complete, error in
+            guard let self, let active, self.connection === active else { return }
+            do {
+                if let data {
+                    let packets = try self.decoder.append(data)
+                    for packet in packets {
+                        try self.handlePacket(packet)
+                        guard self.connection === active else { return }
+                    }
+                    // Completed packets end the previous assembly deadline;
+                    // further fragments cannot extend the next packet's deadline.
+                    if !packets.isEmpty || !self.decoder.hasPartialPacket {
+                        self.packetDeadline?.cancel()
+                        self.packetDeadline = nil
+                    }
+                    if self.decoder.hasPartialPacket, self.packetDeadline == nil {
+                        let timeout = DispatchWorkItem { [weak self] in
+                            self?.finish(ClientError.disconnected("MQTT packet assembly timed out."))
+                        }
+                        self.packetDeadline = timeout
+                        self.queue.asyncAfter(deadline: .now() + 15, execute: timeout)
+                    }
+                }
+            } catch { self.finish(error); return }
             if let error { self.finish(error); return }
             if complete { self.finish(nil); return }
             self.receiveNext()
         }
     }
 
-    private func parsePackets() {
-        while incoming.count >= 2 {
-            guard let length = decodeRemainingLength(incoming, startingAt: 1) else { return }
-            let total = 1 + length.byteCount + length.value
-            guard incoming.count >= total else { return }
-            let header = incoming[0]
-            let bodyStart = 1 + length.byteCount
-            let body = Data(incoming[bodyStart..<total])
-            incoming.removeSubrange(0..<total)
-            handlePacket(type: header >> 4, body: body)
-        }
-    }
-
-    private func handlePacket(type: UInt8, body: Data) {
-        switch type {
-        case 2:
-            guard body.count >= 2 else { return }
-            guard body[1] == 0 else { finish(ClientError.connectionRefused(body[1])); return }
+    private func handlePacket(_ packet: MQTTPacket) throws {
+        switch packet.header {
+        case 0x20:
+            let body = [UInt8](packet.body)
+            guard !isConnected, body.count == 2, body[0] == 0, body[1] <= 5 else {
+                throw LogiError.protocolError("Invalid MQTT CONNACK.")
+            }
+            guard body[1] == 0 else { throw ClientError.connectionRefused(body[1]) }
+            handshakeDeadline?.cancel()
+            handshakeDeadline = nil
             isConnected = true
             startKeepAlive()
             onConnected?()
-        case 3:
-            guard body.count >= 2 else { return }
-            let topicLength = Int(body[0]) << 8 | Int(body[1])
-            guard body.count >= 2 + topicLength,
-                  let topic = String(data: body[2..<(2 + topicLength)], encoding: .utf8) else { return }
-            onMessage?(topic, Data(body[(2 + topicLength)...]))
-        default: break
+        case 0x30, 0x31:
+            guard isConnected else { throw LogiError.protocolError("MQTT publication before CONNACK.") }
+            let message = try packet.publication()
+            onMessage?(message.topic, message.payload, message.retained)
+        case 0x90:
+            guard isConnected, packet.body.count >= 3 else { throw LogiError.protocolError("Invalid MQTT SUBACK.") }
+        case 0xd0:
+            guard isConnected, packet.body.isEmpty else { throw LogiError.protocolError("Invalid MQTT PINGRESP.") }
+        default:
+            throw LogiError.protocolError("Unexpected MQTT packet.")
         }
     }
 
@@ -191,6 +237,11 @@ final class MQTTClient: @unchecked Sendable {
         keepAlive?.cancel()
         keepAlive = nil
         isConnected = false
+        packetDeadline?.cancel()
+        packetDeadline = nil
+        handshakeDeadline?.cancel()
+        handshakeDeadline = nil
+        decoder = MQTTPacketDecoder()
         if wasActive { onDisconnected?(error) }
     }
 }
@@ -205,20 +256,6 @@ private func encodeRemainingLength(_ length: Int) -> [UInt8] {
         bytes.append(byte)
     } while value > 0
     return bytes
-}
-
-private func decodeRemainingLength(_ data: Data, startingAt offset: Int) -> (value: Int, byteCount: Int)? {
-    var multiplier = 1
-    var value = 0
-    var index = offset
-    while index < data.count, index < offset + 4 {
-        let byte = data[index]
-        value += Int(byte & 0x7f) * multiplier
-        if byte & 0x80 == 0 { return (value, index - offset + 1) }
-        multiplier *= 128
-        index += 1
-    }
-    return nil
 }
 
 private extension Data {

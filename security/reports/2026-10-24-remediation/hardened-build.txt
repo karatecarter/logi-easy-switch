@@ -1,0 +1,6 @@
+[0/1] Planning build
+Building for production...
+[0/2] Write swift-version--58304C5D6DBC2206.txt
+Build complete! (0.15s)
+/Users/dan/repos/logi-easy-switch/dist/Logi Easy Switch.app: replacing existing signature
+/Users/dan/repos/logi-easy-switch/dist/Logi Easy Switch.app

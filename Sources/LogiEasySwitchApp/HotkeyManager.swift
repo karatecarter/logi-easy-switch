@@ -47,7 +47,9 @@ final class HotkeyManager {
         }, 1, &event, Unmanaged.passUnretained(self).toOpaque(), &handler)
     }
 
-    func replace(with bindings: [String: Shortcut], action: @escaping (String) -> Void) {
+    @discardableResult
+    func replace(with bindings: [String: Shortcut], action: @escaping (String) -> Void) -> [String] {
+        var failures: [String] = []
         references.forEach { reference in if let reference { UnregisterEventHotKey(reference) } }
         references = []
         actions = [:]
@@ -57,10 +59,11 @@ final class HotkeyManager {
             nextID += 1
             let hotkeyID = EventHotKeyID(signature: OSType(0x4C455357), id: id) // "LESW"
             var ref: EventHotKeyRef?
-            guard RegisterEventHotKey(shortcut.keyCode, shortcut.modifiers, hotkeyID, GetApplicationEventTarget(), 0, &ref) == noErr else { continue }
+            guard RegisterEventHotKey(shortcut.keyCode, shortcut.modifiers, hotkeyID, GetApplicationEventTarget(), 0, &ref) == noErr else { failures.append(target); continue }
             references.append(ref)
             actions[id] = { action(target) }
         }
+        return failures
     }
 }
 

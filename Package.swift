@@ -2,13 +2,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "LogiEasySwitch",
+    name: "Switchboard",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "LogiEasySwitch", targets: ["LogiEasySwitchApp"]),
+        .executable(name: "Switchboard", targets: ["LogiEasySwitchApp"]),
     ],
     targets: [
         .executableTarget(name: "LogiEasySwitchApp"),
+        .testTarget(name: "LogiEasySwitchAppTests", dependencies: ["LogiEasySwitchApp"]),
     ],
     swiftLanguageModes: [.v5]
 )

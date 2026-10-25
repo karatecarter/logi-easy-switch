@@ -1,7 +1,17 @@
 import net from "node:net";
-import { readdir } from "node:fs/promises";
+import { lstat, readdir } from "node:fs/promises";
 
 const SOCKET_PREFIX = "logitech_kiros_agent-";
+const MAX_FRAME_BYTES = 1024 * 1024;
+
+export async function validateAgentSocket(socketPath) {
+  const info = await lstat(socketPath);
+  // Trust only root and our own login user. lstat deliberately rejects symlinks.
+  if (!info.isSocket() || ![0, process.getuid()].includes(info.uid)) {
+    throw new Error("Untrusted Options+ socket: expected a socket owned by root or the current user");
+  }
+  return socketPath;
+}
 
 export function encodeFrame(message) {
   const protocol = Buffer.from("json", "utf8");
@@ -23,12 +33,18 @@ export function decodeFrames(buffer) {
 
   while (buffer.length - offset >= 4) {
     const innerLength = buffer.readUInt32LE(offset);
+    if (innerLength < 8 || innerLength > MAX_FRAME_BYTES) {
+      throw new Error("Invalid or oversized Options+ IPC frame");
+    }
     if (buffer.length - offset < innerLength + 4) break;
 
     const start = offset + 4;
     const protocolLength = buffer.readUInt32BE(start);
     const protocolStart = start + 4;
     const protocolEnd = protocolStart + protocolLength;
+    if (protocolEnd + 4 > offset + innerLength + 4) {
+      throw new Error("Malformed Options+ IPC frame");
+    }
     const messageLength = buffer.readUInt32BE(protocolEnd);
     const messageStart = protocolEnd + 4;
     const messageEnd = messageStart + messageLength;
@@ -56,7 +72,12 @@ export async function findAgentSocket(tmpDirectory = "/tmp") {
   if (matches.length === 0) {
     throw new Error("Logi Options+ agent socket was not found; is Options+ running?");
   }
-  return `${tmpDirectory}/${matches.at(-1)}`;
+  for (const name of matches.reverse()) {
+    const candidate = `${tmpDirectory}/${name}`;
+    try { return await validateAgentSocket(candidate); }
+    catch { /* Ignore vanished paths, symlinks, and sockets belonging to other users. */ }
+  }
+  throw new Error("No trusted Logi Options+ socket was found");
 }
 
 export class OptionsClient {
@@ -65,7 +86,8 @@ export class OptionsClient {
     this.nextMessageId = 1;
   }
 
-  request(verb, path, payload) {
+  async request(verb, path, payload) {
+    await validateAgentSocket(this.socketPath);
     const msgId = String(this.nextMessageId++);
     const message = { msg_id: msgId, verb, path };
     if (payload !== undefined) message.payload = payload;
@@ -86,8 +108,11 @@ export class OptionsClient {
 
       socket.on("connect", () => socket.write(encodeFrame(message)));
       socket.on("data", (chunk) => {
-        received = Buffer.concat([received, chunk]);
         try {
+          if (received.length + chunk.length > MAX_FRAME_BYTES + 4) {
+            throw new Error("Options+ receive buffer exceeds the limit");
+          }
+          received = Buffer.concat([received, chunk]);
           const decoded = decodeFrames(received);
           received = decoded.remaining;
           const response = decoded.messages.find(
