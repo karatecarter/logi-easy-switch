@@ -13,6 +13,6 @@
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSLocalNetworkUsageDescription</key><string>Switchboard connects to your Home Assistant MQTT broker to coordinate keyboard and mouse switching between computers.</string>
-  <key>NSAppleEventsUsageDescription</key><string>Run your configured AppleScript shortcuts and app-specific camera commands.</string>
+  <key>NSAppleEventsUsageDescription</key><string>Run your configured AppleScript shortcuts.</string>
 </dict>
 </plist>

@@ -1,0 +1,16 @@
+
+> switchboard@0.1.0 test
+> node --test
+
+✔ encodes and decodes an Options+ JSON frame (1.135208ms)
+✔ retains a partial frame (0.10225ms)
+✔ rejects malformed and oversized IPC frame lengths (0.308291ms)
+✔ socket discovery rejects files and symlinks and accepts an owned socket (7.171417ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 74.727042

@@ -5,7 +5,7 @@ import AudioToolbox
 import Darwin
 
 struct BuiltinDeckProvider: DeckActionProvider {
-    let kinds = ["application", "url", "group", "homeassistant", "shortcuts", "applescript", "python", "microphone", "camera", "volumeUp", "volumeDown", "volumeMute"]
+    let kinds = ["application", "url", "group", "homeassistant", "shortcuts", "applescript", "python", "microphone", "volumeUp", "volumeDown", "volumeMute"]
 
     func execute(_ button: DeckButton, configuration: DeckConfiguration) async throws {
         let value = button.settings
@@ -19,7 +19,7 @@ struct BuiltinDeckProvider: DeckActionProvider {
             let body = try DeckHomeAssistantClient.actionData(value["data"] ?? "{}")
             _ = try await request(configuration, path: "services/\(action[0])/\(action[1])", body: body, returnResponse: value["returnResponse"] == "true")
         case "shortcuts": _ = try await process("/usr/bin/shortcuts", ["run", value["name"] ?? ""])
-        case "applescript", "camera":
+        case "applescript":
             guard let script = value["script"], !script.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw DeckError.message("Configure an AppleScript command for this button first.") }
             _ = try await process("/usr/bin/osascript", ["-e", script])
         case "python":
@@ -58,10 +58,6 @@ struct BuiltinDeckProvider: DeckActionProvider {
             let muted = try AudioControl.muted(input: input)
             let volume = try? AudioControl.volume()
             return DeckPresentation(text: input ? (muted ? "Muted" : "Live") : (muted ? "Muted" : "\(Int((volume ?? 0) * 100))%"), icon: input ? (muted ? "mic.slash.fill" : "mic.fill") : (muted ? "speaker.slash.fill" : ((volume ?? 0) < 0.4 ? "speaker.wave.1.fill" : "speaker.wave.3.fill")))
-        case "camera":
-            guard let script = button.settings["stateScript"], !script.isEmpty else { return DeckPresentation(text: "App-specific", icon: "video") }
-            let state = try await process("/usr/bin/osascript", ["-e", script]).trimmingCharacters(in: .whitespacesAndNewlines)
-            return DeckPresentation(text: state, icon: state == "on" ? "video.fill" : "video.slash.fill")
         default: return DeckPresentation()
         }
     }
@@ -143,38 +139,9 @@ private final class DeckNoRedirect: NSObject, URLSessionTaskDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
 }
 
-// Drain both output streams to files, avoiding pipe deadlocks. Never invoke a shell.
+// Capture stdout and stderr together with an enforced quota; never invoke a shell.
 func process(_ executable: String, _ arguments: [String]) async throws -> String {
-    try await Task.detached {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let output = directory.appendingPathComponent("output")
-        FileManager.default.createFile(atPath: output.path, contents: nil)
-        let handle = try FileHandle(forWritingTo: output)
-        defer { try? handle.close() }
-        let child = Process()
-        child.executableURL = URL(fileURLWithPath: executable)
-        child.arguments = arguments
-        child.standardOutput = handle
-        child.standardError = handle
-        try child.run()
-        let deadline = Date().addingTimeInterval(60)
-        while child.isRunning && Date() < deadline && !Task.isCancelled { try await Task.sleep(for: .milliseconds(50)) }
-        if child.isRunning {
-            child.terminate()
-            try? await Task.sleep(for: .milliseconds(250))
-            if child.isRunning { kill(child.processIdentifier, SIGKILL) }
-            child.waitUntilExit()
-            throw DeckError.message("Action exceeded the 60-second limit.")
-        }
-        let reader = try FileHandle(forReadingFrom: output)
-        defer { try? reader.close() }
-        let data = try reader.read(upToCount: 65536) ?? Data()
-        let text = String(decoding: data, as: UTF8.self)
-        guard child.terminationStatus == 0 else { throw DeckError.message(text.isEmpty ? "Action failed (\(child.terminationStatus))." : text) }
-        return text
-    }.value
+    try await DeckProcessRunner.run(executable, arguments)
 }
 
 enum AudioControl {

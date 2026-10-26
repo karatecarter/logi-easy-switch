@@ -297,13 +297,18 @@ final class DeckTests: XCTestCase {
         } catch { XCTAssertTrue(error.localizedDescription.contains("failed")) }
     }
 
-    func testUnconfiguredCameraCannotReportSuccess() async {
+    func testLegacyCameraActionsCannotExecuteScripts() async throws {
         var button = DeckButton()
         button.kind = "camera"
+        button.settings = ["script": "error \"Camera action executed\"", "stateScript": "error \"Camera state executed\""]
+        let provider = BuiltinDeckProvider()
+        XCTAssertFalse(provider.kinds.contains("camera"))
+        let presentation = try await provider.presentation(button, configuration: DeckConfiguration())
+        XCTAssertEqual(presentation, DeckPresentation())
         do {
             try await BuiltinDeckProvider().execute(button, configuration: DeckConfiguration())
-            XCTFail("Expected missing command error")
-        } catch { XCTAssertTrue(error.localizedDescription.contains("Configure")) }
+            XCTFail("Removed camera actions must be rejected")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("Unsupported action provider")) }
     }
 
     func testInvalidHomeAssistantActionRejectedBeforeNetwork() async {

@@ -1,0 +1,279 @@
+[0/1] Planning build
+Building for debugging...
+[0/4] Write swift-version--58304C5D6DBC2206.txt
+Build complete! (0.16s)
+Test Suite 'All tests' started at 2026-10-25 22:09:53.729.
+Test Suite 'SwitchboardPackageTests.xctest' started at 2026-10-25 22:09:53.730.
+Test Suite 'CredentialSessionCacheTests' started at 2026-10-25 22:09:53.730.
+Test Case '-[LogiEasySwitchAppTests.CredentialSessionCacheTests testDeniedReadDoesNotKeepPromptingAndExplicitRetryCanRecover]' started.
+Test Case '-[LogiEasySwitchAppTests.CredentialSessionCacheTests testDeniedReadDoesNotKeepPromptingAndExplicitRetryCanRecover]' passed (0.002 seconds).
+Test Case '-[LogiEasySwitchAppTests.CredentialSessionCacheTests testDeniedReadDoesNotTreatEmptyAsKnownStoredCredential]' started.
+Test Case '-[LogiEasySwitchAppTests.CredentialSessionCacheTests testDeniedReadDoesNotTreatEmptyAsKnownStoredCredential]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.CredentialSessionCacheTests testRepeatedLoadsAndUnchangedSaveDoNotAccessKeychainAgain]' started.
+Test Case '-[LogiEasySwitchAppTests.CredentialSessionCacheTests testRepeatedLoadsAndUnchangedSaveDoNotAccessKeychainAgain]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.CredentialSessionCacheTests testSuccessfulSaveUpdatesSessionAndFailedSavePreservesIt]' started.
+Test Case '-[LogiEasySwitchAppTests.CredentialSessionCacheTests testSuccessfulSaveUpdatesSessionAndFailedSavePreservesIt]' passed (0.002 seconds).
+Test Suite 'CredentialSessionCacheTests' passed at 2026-10-25 22:09:53.735.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.004 (0.005) seconds
+Test Suite 'DeckDesktopTests' started at 2026-10-25 22:09:53.735.
+Test Case '-[LogiEasySwitchAppTests.DeckDesktopTests testApplicationActionRequiresInstalledApplication]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckDesktopTests testApplicationActionRequiresInstalledApplication]' passed (0.002 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckDesktopTests testCustomImagesAreNormalizedAndStayWithSyncedButton]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckDesktopTests testCustomImagesAreNormalizedAndStayWithSyncedButton]' passed (0.010 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckDesktopTests testEmptyURLWithApplicationMetadataIsRepairedLocallyAndThroughSync]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckDesktopTests testEmptyURLWithApplicationMetadataIsRepairedLocallyAndThroughSync]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckDesktopTests testInvalidAndOversizedImagesAreRejected]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckDesktopTests testInvalidAndOversizedImagesAreRejected]' passed (0.002 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckDesktopTests testSettingsHotkeyPersistsAndStaysLocalDuringSync]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckDesktopTests testSettingsHotkeyPersistsAndStaysLocalDuringSync]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckDesktopTests testURLActionsAcceptWebAndApplicationLinksAndRejectInvalidInputs]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckDesktopTests testURLActionsAcceptWebAndApplicationLinksAndRejectInvalidInputs]' passed (0.000 seconds).
+Test Suite 'DeckDesktopTests' passed at 2026-10-25 22:09:53.751.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.016 (0.016) seconds
+Test Suite 'DeckFaviconTests' started at 2026-10-25 22:09:53.751.
+Test Case '-[LogiEasySwitchAppTests.DeckFaviconTests testDownloadFallsBackAndReturnsOfflineCacheImage]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckFaviconTests testDownloadFallsBackAndReturnsOfflineCacheImage]' passed (0.003 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckFaviconTests testFallbackIsRetainedEvenWhenPageHasManyIcons]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckFaviconTests testFallbackIsRetainedEvenWhenPageHasManyIcons]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckFaviconTests testFindsRelativeAndTouchIconsWithoutDownloadingUnsafeSchemes]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckFaviconTests testFindsRelativeAndTouchIconsWithoutDownloadingUnsafeSchemes]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckFaviconTests testNonWebURLsAndEmbeddedCredentialsAreRejected]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckFaviconTests testNonWebURLsAndEmbeddedCredentialsAreRejected]' passed (0.000 seconds).
+Test Suite 'DeckFaviconTests' passed at 2026-10-25 22:09:53.755.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.004 (0.004) seconds
+Test Suite 'DeckFileSelectionTests' started at 2026-10-25 22:09:53.755.
+Test Case '-[LogiEasySwitchAppTests.DeckFileSelectionTests testOrdinaryDocumentStaysLocalAndResolvesToOpenFile]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckFileSelectionTests testOrdinaryDocumentStaysLocalAndResolvesToOpenFile]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckFileSelectionTests testWeblocAndWindowsInternetShortcutParsing]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckFileSelectionTests testWeblocAndWindowsInternetShortcutParsing]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckFileSelectionTests testWeblocWithCustomIconConvertsToURLAndEmbedsIcon]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckFileSelectionTests testWeblocWithCustomIconConvertsToURLAndEmbedsIcon]' passed (0.120 seconds).
+Test Suite 'DeckFileSelectionTests' passed at 2026-10-25 22:09:53.878.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.122 (0.122) seconds
+Test Suite 'DeckFolderControlsTests' started at 2026-10-25 22:09:53.878.
+Test Case '-[LogiEasySwitchAppTests.DeckFolderControlsTests testFolderControlNavigationReturnsToScreenItWasOpenedFromAndSyncs]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckFolderControlsTests testFolderControlNavigationReturnsToScreenItWasOpenedFromAndSyncs]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckFolderControlsTests testFolderControlsAppearBesideFolderAndNotInsideIt]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckFolderControlsTests testFolderControlsAppearBesideFolderAndNotInsideIt]' passed (0.000 seconds).
+Test Suite 'DeckFolderControlsTests' passed at 2026-10-25 22:09:53.879.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
+Test Suite 'DeckLogiActionTests' started at 2026-10-25 22:09:53.879.
+Test Case '-[LogiEasySwitchAppTests.DeckLogiActionTests testLogiRequestDefaultsToBothAndValidatesDestinationAndScope]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckLogiActionTests testLogiRequestDefaultsToBothAndValidatesDestinationAndScope]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckLogiActionTests testNewButtonsDefaultToOpenFileAndExistingMicrophoneButtonsKeepTheirType]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckLogiActionTests testNewButtonsDefaultToOpenFileAndExistingMicrophoneButtonsKeepTheirType]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckLogiActionTests testProviderPassesRequestedScopeWithoutTouchingHardware]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckLogiActionTests testProviderPassesRequestedScopeWithoutTouchingHardware]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckLogiActionTests testScopedNetworkCommandsRejectRetainedUnknownTargetsAndBadScopes]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckLogiActionTests testScopedNetworkCommandsRejectRetainedUnknownTargetsAndBadScopes]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckLogiActionTests testScopeSelectsOnlyRequestedDeviceTypes]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckLogiActionTests testScopeSelectsOnlyRequestedDeviceTypes]' passed (0.000 seconds).
+Test Suite 'DeckLogiActionTests' passed at 2026-10-25 22:09:53.880.
+	 Executed 5 tests, with 0 failures (0 unexpected) in 0.001 (0.002) seconds
+Test Suite 'DeckSharedDocumentTests' started at 2026-10-25 22:09:53.880.
+Test Case '-[LogiEasySwitchAppTests.DeckSharedDocumentTests testConcurrentCreationKeepsBothButtonsAndIdenticalValuesDoNotConflict]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSharedDocumentTests testConcurrentCreationKeepsBothButtonsAndIdenticalValuesDoNotConflict]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSharedDocumentTests testConcurrentFolderDeletionPromotesSurvivingEditedChildren]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSharedDocumentTests testConcurrentFolderDeletionPromotesSurvivingEditedChildren]' passed (0.002 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSharedDocumentTests testConcurrentSameButtonEditsArePreservedAndResolutionPropagates]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSharedDocumentTests testConcurrentSameButtonEditsArePreservedAndResolutionPropagates]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSharedDocumentTests testDeletionIsNotResurrectedByStaleSnapshots]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSharedDocumentTests testDeletionIsNotResurrectedByStaleSnapshots]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSharedDocumentTests testDifferentButtonsMergeAndConvergeRegardlessOfDeliveryOrder]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSharedDocumentTests testDifferentButtonsMergeAndConvergeRegardlessOfDeliveryOrder]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSharedDocumentTests testPeerReceivesRemoteAndPersistsOfflineEditsWithoutEchoing]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSharedDocumentTests testPeerReceivesRemoteAndPersistsOfflineEditsWithoutEchoing]' passed (0.005 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSharedDocumentTests testStalePeerCannotUndoResolvedDeletionConflict]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSharedDocumentTests testStalePeerCannotUndoResolvedDeletionConflict]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSharedDocumentTests testThreePeerMergeIsAssociativeAndDuplicateSafe]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSharedDocumentTests testThreePeerMergeIsAssociativeAndDuplicateSafe]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSharedDocumentTests testTwoCoordinatorsConvergeAfterIndependentOfflineEdits]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSharedDocumentTests testTwoCoordinatorsConvergeAfterIndependentOfflineEdits]' passed (0.006 seconds).
+Test Suite 'DeckSharedDocumentTests' passed at 2026-10-25 22:09:53.898.
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.017 (0.018) seconds
+Test Suite 'DeckShortcutTreeTests' started at 2026-10-25 22:09:53.898.
+Test Case '-[LogiEasySwitchAppTests.DeckShortcutTreeTests testInvalidDropTargetsAndFolderCyclesAreRejected]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckShortcutTreeTests testInvalidDropTargetsAndFolderCyclesAreRejected]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckShortcutTreeTests testLongNamesWrapAndOutlineStaysWithinViewport]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckShortcutTreeTests testLongNamesWrapAndOutlineStaysWithinViewport]' passed (0.042 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckShortcutTreeTests testMovesIntoFolderAndBackToRootWithoutLosingSubtree]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckShortcutTreeTests testMovesIntoFolderAndBackToRootWithoutLosingSubtree]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckShortcutTreeTests testOutlineStartsCollapsedAndPreservesExpansionAcrossRefreshes]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckShortcutTreeTests testOutlineStartsCollapsedAndPreservesExpansionAcrossRefreshes]' passed (0.002 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckShortcutTreeTests testReorderUsesDropIndexBeforeRemovingSource]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckShortcutTreeTests testReorderUsesDropIndexBeforeRemovingSource]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckShortcutTreeTests testRowsUseConfiguredIconsAndSeparateLocalBadge]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckShortcutTreeTests testRowsUseConfiguredIconsAndSeparateLocalBadge]' passed (0.006 seconds).
+Test Suite 'DeckShortcutTreeTests' passed at 2026-10-25 22:09:53.950.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.052 (0.052) seconds
+Test Suite 'DeckSyncScopeTests' started at 2026-10-25 22:09:53.950.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncScopeTests testDefaultAndLegacyButtonsSyncUnlessExplicitlyUnchecked]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncScopeTests testDefaultAndLegacyButtonsSyncUnlessExplicitlyUnchecked]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSyncScopeTests testDeletedSharedParentDoesNotHideLocalChild]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncScopeTests testDeletedSharedParentDoesNotHideLocalChild]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSyncScopeTests testEditingLocalCopyDoesNotDeleteRemoteConflictAgain]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncScopeTests testEditingLocalCopyDoesNotDeleteRemoteConflictAgain]' passed (0.004 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSyncScopeTests testIncomingSnapshotCannotOverwriteLocalButtonWithSameID]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncScopeTests testIncomingSnapshotCannotOverwriteLocalButtonWithSameID]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSyncScopeTests testLocalFolderExcludesDescendantsAndIncomingUpdatesPreserveThem]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncScopeTests testLocalFolderExcludesDescendantsAndIncomingUpdatesPreserveThem]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSyncScopeTests testOptingOutDeletesSharedCopyButKeepsLocalAndReenableSharesAgain]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncScopeTests testOptingOutDeletesSharedCopyButKeepsLocalAndReenableSharesAgain]' passed (0.000 seconds).
+Test Suite 'DeckSyncScopeTests' passed at 2026-10-25 22:09:53.956.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.005 (0.005) seconds
+Test Suite 'DeckSyncTests' started at 2026-10-25 22:09:53.956.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTests testBackupFailureDoesNotReplaceConfigurationOrAdvanceRevision]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTests testBackupFailureDoesNotReplaceConfigurationOrAdvanceRevision]' passed (0.002 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTests testEnvelopeRejectsWrongSourceSchemaOversizeAndInvalidHierarchy]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTests testEnvelopeRejectsWrongSourceSchemaOversizeAndInvalidHierarchy]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTests testFollowerAppliesNewSnapshotsBacksUpAndRejectsRollback]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTests testFollowerAppliesNewSnapshotsBacksUpAndRejectsRollback]' passed (0.004 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTests testSharedConfigExcludesMachineLocalSettingsAndPreservesOverrides]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTests testSharedConfigExcludesMachineLocalSettingsAndPreservesOverrides]' passed (0.000 seconds).
+Test Suite 'DeckSyncTests' passed at 2026-10-25 22:09:53.963.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.007 (0.007) seconds
+Test Suite 'DeckSyncTransferTests' started at 2026-10-25 22:09:53.963.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTransferTests testActualSharedGroupFixtureWhenProvided]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTransferTests testActualSharedGroupFixtureWhenProvided]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTransferTests testBrokerDeniedSubscriptionIsReportedInsteadOfWaitingSilently]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTransferTests testBrokerDeniedSubscriptionIsReportedInsteadOfWaitingSilently]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTransferTests testIncompleteAndCorruptSnapshotsCannotApply]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTransferTests testIncompleteAndCorruptSnapshotsCannotApply]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTransferTests testLargeGroupBecomesEditableOnlyAfterWholeSnapshotArrives]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTransferTests testLargeGroupBecomesEditableOnlyAfterWholeSnapshotArrives]' passed (0.005 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTransferTests testLargeSnapshotAssemblesWithManifestFirstOrLastAndDuplicateChunks]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTransferTests testLargeSnapshotAssemblesWithManifestFirstOrLastAndDuplicateChunks]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTransferTests testSmallSnapshotsRemainCompatibleAndTransferLimitsAreEnforced]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckSyncTransferTests testSmallSnapshotsRemainCompatibleAndTransferLimitsAreEnforced]' passed (0.001 seconds).
+Test Suite 'DeckSyncTransferTests' passed at 2026-10-25 22:09:53.971.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.008 (0.008) seconds
+Test Suite 'DeckTests' started at 2026-10-25 22:09:53.971.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testActionCatalogReadsNamesFiltersAndResponseRequirements]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testActionCatalogReadsNamesFiltersAndResponseRequirements]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testConfigurationPreservesHierarchyAndProviderSettings]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testConfigurationPreservesHierarchyAndProviderSettings]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testCountdownTracksDeadlineAndClampsProgress]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testCountdownTracksDeadlineAndClampsProgress]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testDismissalOverrides]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testDismissalOverrides]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testEntitySelectionBuildsJSONAndPreservesExtraParameters]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testEntitySelectionBuildsJSONAndPreservesExtraParameters]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testExistingLightButtonsAutomaticallyUseStateUnlessOverridden]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testExistingLightButtonsAutomaticallyUseStateUnlessOverridden]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testGroupKeysShareTheVisibleFolderAndBackSkipsTheGroup]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testGroupKeysShareTheVisibleFolderAndBackSkipsTheGroup]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testHomeAssistantConnectionRejectsUnrelatedServerResponse]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testHomeAssistantConnectionRejectsUnrelatedServerResponse]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testHomeAssistantConnectionUsesAuthenticatedReadOnlyEndpoint]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testHomeAssistantConnectionUsesAuthenticatedReadOnlyEndpoint]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testHomeAssistantConnectionValidationBeforeNetwork]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testHomeAssistantConnectionValidationBeforeNetwork]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testHomeAssistantHTTPFailuresHaveActionableMessages]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testHomeAssistantHTTPFailuresHaveActionableMessages]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testInvalidHomeAssistantActionRejectedBeforeNetwork]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testInvalidHomeAssistantActionRejectedBeforeNetwork]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testLightPresentationDoesNotClaimUnavailableLightsAreOff]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testLightPresentationDoesNotClaimUnavailableLightsAreOff]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testOpeningDismissalPreservesLegacySettingsAndIndependentCheckbox]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testOpeningDismissalPreservesLegacySettingsAndIndependentCheckbox]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testProcessArgumentsAreNotShellExpanded]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testProcessArgumentsAreNotShellExpanded]' passed (0.055 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testProcessFailureIsReported]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testProcessFailureIsReported]' passed (0.057 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testReturnDestinationDefaultsToBackAndCanTargetAnyFolder]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testReturnDestinationDefaultsToBackAndCanTargetAnyFolder]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testReturnRulePersistsAndLegacyButtonsRemainReadable]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testReturnRulePersistsAndLegacyButtonsRemainReadable]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testServiceDataRejectsSmartQuotesWithHelpfulError]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testServiceDataRejectsSmartQuotesWithHelpfulError]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testThermostatModeReturnSkipsItsMultiActionOwner]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testThermostatModeReturnSkipsItsMultiActionOwner]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testThermostatPresetHasIndependentAdjustmentAndModeActions]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testThermostatPresetHasIndependentAdjustmentAndModeActions]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testThermostatSelectionUpdatesModeTargetsAndTemplateWithoutChangingIncrements]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testThermostatSelectionUpdatesModeTargetsAndTemplateWithoutChangingIncrements]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testUnconfiguredCameraCannotReportSuccess]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testUnconfiguredCameraCannotReportSuccess]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testUnconfiguredThermostatModeFailsBeforeNetwork]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testUnconfiguredThermostatModeFailsBeforeNetwork]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTests testValidServiceDataPreservesUnicodeText]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTests testValidServiceDataPreservesUnicodeText]' passed (0.000 seconds).
+Test Suite 'DeckTests' passed at 2026-10-25 22:09:54.092.
+	 Executed 25 tests, with 0 failures (0 unexpected) in 0.118 (0.120) seconds
+Test Suite 'DeckThermostatPreviewTests' started at 2026-10-25 22:09:54.092.
+Test Case '-[LogiEasySwitchAppTests.DeckThermostatPreviewTests testDoesNotGuessForUnsupportedTemplatesRangesOrActions]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckThermostatPreviewTests testDoesNotGuessForUnsupportedTemplatesRangesOrActions]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckThermostatPreviewTests testFailureAndTimeoutRestoreAuthoritativeText]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckThermostatPreviewTests testFailureAndTimeoutRestoreAuthoritativeText]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckThermostatPreviewTests testFractionalAndRepeatedAdjustmentsAccumulateWithoutFloatArtifacts]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckThermostatPreviewTests testFractionalAndRepeatedAdjustmentsAccumulateWithoutFloatArtifacts]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckThermostatPreviewTests testImmediatePreviewSurvivesOldReadbackUntilConfirmation]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckThermostatPreviewTests testImmediatePreviewSurvivesOldReadbackUntilConfirmation]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckThermostatPreviewTests testLegacyParameterMigratesOnlyPresetControlsAndPreservesExplicitIncrement]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckThermostatPreviewTests testLegacyParameterMigratesOnlyPresetControlsAndPreservesExplicitIncrement]' passed (0.000 seconds).
+Test Suite 'DeckThermostatPreviewTests' passed at 2026-10-25 22:09:54.094.
+	 Executed 5 tests, with 0 failures (0 unexpected) in 0.002 (0.002) seconds
+Test Suite 'DeckTicksTests' started at 2026-10-25 22:09:54.094.
+Test Case '-[LogiEasySwitchAppTests.DeckTicksTests testExistingNumericPresetMigratesToTicks]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTicksTests testExistingNumericPresetMigratesToTicks]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTicksTests testMixedThermostatTapsSendOneNetIncrementAfterQuietPeriod]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTicksTests testMixedThermostatTapsSendOneNetIncrementAfterQuietPeriod]' passed (0.330 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTicksTests testPayloadSendsSignedTapCountAndPreservesOtherFields]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTicksTests testPayloadSendsSignedTapCountAndPreservesOtherFields]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckTicksTests testRapidTapsProduceOneFlushAfterLastTap]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckTicksTests testRapidTapsProduceOneFlushAfterLastTap]' passed (0.299 seconds).
+Test Suite 'DeckTicksTests' passed at 2026-10-25 22:09:54.724.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.629 (0.630) seconds
+Test Suite 'DeckWindowLayoutTests' started at 2026-10-25 22:09:54.724.
+Test Case '-[LogiEasySwitchAppTests.DeckWindowLayoutTests testHeightGrowsBeforeWidthAndAlwaysCentersOnSelectedScreen]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckWindowLayoutTests testHeightGrowsBeforeWidthAndAlwaysCentersOnSelectedScreen]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckWindowLayoutTests testHugeCollectionsRemainWithinScreenAndSmallFoldersShrink]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckWindowLayoutTests testHugeCollectionsRemainWithinScreenAndSmallFoldersShrink]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckWindowLayoutTests testMeasurementIncludesEveryGridRowWithoutScrolling]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckWindowLayoutTests testMeasurementIncludesEveryGridRowWithoutScrolling]' passed (0.078 seconds).
+Test Case '-[LogiEasySwitchAppTests.DeckWindowLayoutTests testWidthGrowsOnlyWhenHeightDoesNotFit]' started.
+Test Case '-[LogiEasySwitchAppTests.DeckWindowLayoutTests testWidthGrowsOnlyWhenHeightDoesNotFit]' passed (0.000 seconds).
+Test Suite 'DeckWindowLayoutTests' passed at 2026-10-25 22:09:54.802.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.078 (0.078) seconds
+Test Suite 'SecurityTests' started at 2026-10-25 22:09:54.802.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testAllTruncatedHIDReportsRejected]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testAllTruncatedHIDReportsRejected]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testBufferLimitRejectsExcessiveSingleRead]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testBufferLimitRejectsExcessiveSingleRead]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testCertificateHostnameValidationAndMigration]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testCertificateHostnameValidationAndMigration]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testFragmentedAndCoalescedMQTTPackets]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testFragmentedAndCoalescedMQTTPackets]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testHIDHostCountAndChannelBounds]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testHIDHostCountAndChannelBounds]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testMalformedAndOversizedLengthsAreRejectedImmediately]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testMalformedAndOversizedLengthsAreRejectedImmediately]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testMaximumPacketCanArriveInFragments]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testMaximumPacketCanArriveInFragments]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testNamespacesRejectWildcardsAndPaths]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testNamespacesRejectWildcardsAndPaths]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testPlaintextClientFailsBeforeConnecting]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testPlaintextClientFailsBeforeConnecting]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testPublicationRejectsMalformedTopicsAndUnsupportedQoS]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testPublicationRejectsMalformedTopicsAndUnsupportedQoS]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testRetainedCommandAndUnknownTargetCannotSwitch]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testRetainedCommandAndUnknownTargetCannotSwitch]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testTLSRequiredIncludingOldSavedSettings]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityTests testTLSRequiredIncludingOldSavedSettings]' passed (0.000 seconds).
+Test Suite 'SecurityTests' passed at 2026-10-25 22:09:54.807.
+	 Executed 12 tests, with 0 failures (0 unexpected) in 0.004 (0.005) seconds
+Test Suite 'ShortcutLabelTests' started at 2026-10-25 22:09:54.807.
+Test Case '-[LogiEasySwitchAppTests.ShortcutLabelTests testCompactNumpadLabelsKeepModifiers]' started.
+Test Case '-[LogiEasySwitchAppTests.ShortcutLabelTests testCompactNumpadLabelsKeepModifiers]' passed (0.000 seconds).
+Test Case '-[LogiEasySwitchAppTests.ShortcutLabelTests testSavedNumpadEnterHasVisibleLabel]' started.
+Test Case '-[LogiEasySwitchAppTests.ShortcutLabelTests testSavedNumpadEnterHasVisibleLabel]' passed (0.000 seconds).
+Test Suite 'ShortcutLabelTests' passed at 2026-10-25 22:09:54.807.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'SwitchboardPackageTests.xctest' passed at 2026-10-25 22:09:54.807.
+	 Executed 107 tests, with 0 failures (0 unexpected) in 1.068 (1.077) seconds
+Test Suite 'All tests' passed at 2026-10-25 22:09:54.807.
+	 Executed 107 tests, with 0 failures (0 unexpected) in 1.068 (1.078) seconds
+◇ Test run started.
+↳ Testing Library Version: 1501
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.

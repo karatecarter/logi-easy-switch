@@ -55,7 +55,7 @@ Use **Shortcuts Settings…** in the menu bar to configure a virtual shortcut de
 then open it with **Show Shortcuts** or its configurable global hotkey. Buttons
 support per-folder keyboard keys (including numpad), nested folders, Home
 Assistant actions and templates, Apple Shortcuts, AppleScript, Python, microphone
-mute, volume controls, launch applications, open URLs, and app-specific camera commands.
+mute, volume controls, launch applications, and open URLs.
 Icons can use searchable symbols, application icons, or imported/pasted images.
 Click outside the launcher to dismiss it. Global and per-button
 dismissal rules control whether it stays open.

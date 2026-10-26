@@ -50,7 +50,6 @@ enum DeckImageIcons {
         if button.icon != "square.grid.2x2" { return button.icon }
         switch button.kind {
         case "microphone": return "mic"
-        case "camera": return "video"
         case "volumeUp", "volumeDown", "volumeMute": return "speaker.wave.2"
         case "folder": return "folder"
         case "logi": return "keyboard"

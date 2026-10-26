@@ -1,0 +1,94 @@
+Building for debugging...
+[0/11] /private/tmp/logi-security-review-2026-10-25/source/.build/arm64-apple-macosx/debug/SwitchboardPackageTests.derived/runner.swift
+[1/11] Write sources
+[4/11] Write Switchboard-entitlement.plist
+[5/11] Write swift-version--58304C5D6DBC2206.txt
+[7/49] Compiling LogiEasySwitchApp LaunchAtLogin.swift
+[8/49] Compiling LogiEasySwitchApp LogiAgent.swift
+[9/49] Compiling LogiEasySwitchApp MQTTClient.swift
+[10/49] Compiling LogiEasySwitchApp MQTTConfiguration.swift
+[11/49] Compiling LogiEasySwitchApp MQTTCoordinator.swift
+[12/49] Compiling LogiEasySwitchApp DeckSyncScope.swift
+[13/49] Compiling LogiEasySwitchApp DeckSyncTransfer.swift
+[14/49] Compiling LogiEasySwitchApp DeckSyncView.swift
+[15/49] Compiling LogiEasySwitchApp DeckThermostatPreview.swift
+[16/49] Compiling LogiEasySwitchApp DeckTicks.swift
+[17/54] Compiling LogiEasySwitchApp DeckImageIcons.swift
+[18/54] Compiling LogiEasySwitchApp DeckLogiAction.swift
+[19/54] Compiling LogiEasySwitchApp DeckModels.swift
+[20/54] Compiling LogiEasySwitchApp DeckPickers.swift
+[21/54] Compiling LogiEasySwitchApp DeckReturnEditor.swift
+[22/54] Compiling LogiEasySwitchApp AppDelegate.swift
+[23/54] Compiling LogiEasySwitchApp CredentialSessionCache.swift
+[24/54] Compiling LogiEasySwitchApp DeckActions.swift
+[25/54] Compiling LogiEasySwitchApp DeckCountdown.swift
+[26/54] Compiling LogiEasySwitchApp DeckDesktopActions.swift
+[27/54] Compiling LogiEasySwitchApp DeckDisclosureStyle.swift
+[28/54] Compiling LogiEasySwitchApp DeckSettings.swift
+[29/54] Compiling LogiEasySwitchApp DeckSharedDocument.swift
+[30/54] Compiling LogiEasySwitchApp DeckShortcutOutline.swift
+[31/54] Compiling LogiEasySwitchApp DeckShortcutTree.swift
+[32/54] Compiling LogiEasySwitchApp DeckSync.swift
+[33/54] Compiling LogiEasySwitchApp DeckFavicon.swift
+[34/54] Compiling LogiEasySwitchApp DeckFileSelection.swift
+[35/54] Compiling LogiEasySwitchApp DeckGroupEditor.swift
+[36/54] Compiling LogiEasySwitchApp DeckGroups.swift
+[37/54] Compiling LogiEasySwitchApp DeckHAEditor.swift
+[38/54] Compiling LogiEasySwitchApp DeckHomeAssistantCatalog.swift
+[39/54] Compiling LogiEasySwitchApp DeckWindow.swift
+[40/54] Compiling LogiEasySwitchApp DeckWindowLayout.swift
+[41/54] Compiling LogiEasySwitchApp HIDPPResponse.swift
+[42/54] Compiling LogiEasySwitchApp HIDPPTransport.swift
+[43/54] Compiling LogiEasySwitchApp HotkeyManager.swift
+[44/54] Emitting module LogiEasySwitchApp
+[45/54] Compiling LogiEasySwitchApp MQTTWire.swift
+[46/54] Compiling LogiEasySwitchApp Main.swift
+[47/54] Compiling LogiEasySwitchApp Models.swift
+[48/54] Compiling LogiEasySwitchApp SettingsView.swift
+[49/54] Compiling LogiEasySwitchApp USBTrigger.swift
+[49/54] Write Objects.LinkFileList
+[50/54] Linking Switchboard
+[51/54] Applying Switchboard
+[53/71] Compiling LogiEasySwitchAppTests DeckFileSelectionTests.swift
+[54/71] Compiling LogiEasySwitchAppTests DeckFolderControlsTests.swift
+[55/71] Compiling LogiEasySwitchAppTests DeckLogiActionTests.swift
+[56/71] Compiling LogiEasySwitchAppTests CredentialSessionCacheTests.swift
+[57/71] Compiling LogiEasySwitchAppTests DeckDesktopTests.swift
+[58/71] Compiling LogiEasySwitchAppTests DeckFaviconTests.swift
+[59/71] Compiling LogiEasySwitchAppTests DeckSharedDocumentTests.swift
+[60/71] Compiling LogiEasySwitchAppTests DeckShortcutTreeTests.swift
+[61/71] Emitting module LogiEasySwitchAppTests
+[62/71] Compiling LogiEasySwitchAppTests DeckThermostatPreviewTests.swift
+[63/71] Compiling LogiEasySwitchAppTests DeckTicksTests.swift
+[64/71] Compiling LogiEasySwitchAppTests DeckSyncTransferTests.swift
+[65/71] Compiling LogiEasySwitchAppTests DeckTests.swift
+[66/71] Compiling LogiEasySwitchAppTests DeckSyncScopeTests.swift
+[67/71] Compiling LogiEasySwitchAppTests DeckSyncTests.swift
+[68/71] Compiling LogiEasySwitchAppTests DeckWindowLayoutTests.swift
+[69/71] Compiling LogiEasySwitchAppTests SecurityReviewProofTests.swift
+[70/73] Compiling LogiEasySwitchAppTests SecurityTests.swift
+[71/73] Compiling LogiEasySwitchAppTests ShortcutLabelTests.swift
+[72/75] Compiling SwitchboardPackageTests runner.swift
+[73/75] Emitting module SwitchboardPackageTests
+[73/75] Write Objects.LinkFileList
+[74/75] Linking SwitchboardPackageTests
+Build complete! (19.18s)
+Test Suite 'Selected tests' started at 2026-10-25 22:13:42.984.
+Test Suite 'SwitchboardPackageTests.xctest' started at 2026-10-25 22:13:42.985.
+Test Suite 'SecurityReviewProofTests' started at 2026-10-25 22:13:42.985.
+Test Case '-[LogiEasySwitchAppTests.SecurityReviewProofTests testHTTPHomeAssistantRequestCarriesBearerCredential]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityReviewProofTests testHTTPHomeAssistantRequestCarriesBearerCredential]' passed (0.001 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityReviewProofTests testProcessWritesMoreThanOutputReadCap]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityReviewProofTests testProcessWritesMoreThanOutputReadCap]' passed (1.297 seconds).
+Test Case '-[LogiEasySwitchAppTests.SecurityReviewProofTests testSyncedCameraStateScriptRunsWithoutActionActivation]' started.
+Test Case '-[LogiEasySwitchAppTests.SecurityReviewProofTests testSyncedCameraStateScriptRunsWithoutActionActivation]' passed (0.109 seconds).
+Test Suite 'SecurityReviewProofTests' passed at 2026-10-25 22:13:44.393.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 1.407 (1.408) seconds
+Test Suite 'SwitchboardPackageTests.xctest' passed at 2026-10-25 22:13:44.393.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 1.407 (1.408) seconds
+Test Suite 'Selected tests' passed at 2026-10-25 22:13:44.393.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 1.407 (1.409) seconds
+◇ Test run started.
+↳ Testing Library Version: 1501
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.

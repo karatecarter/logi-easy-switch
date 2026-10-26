@@ -37,8 +37,8 @@ struct DeckSettingsView: View {
     @State private var connectionSucceeded = false
     @StateObject private var capture = DeckKeyCapture()
     @StateObject private var settingsCapture = DeckKeyCapture()
-    private let kinds = ["logi", "application", "url", "group", "folder", "homeassistant", "shortcuts", "applescript", "python", "microphone", "camera", "volumeUp", "volumeDown", "volumeMute"]
-    private let names = ["Switch Logitech device", "Open File", "Open URL", "Multi-action button", "Folder", "Home Assistant", "Apple Shortcuts", "AppleScript", "Python script", "Microphone mute", "Camera (app-specific)", "Volume up", "Volume down", "Speaker mute"]
+    private let kinds = ["logi", "application", "url", "group", "folder", "homeassistant", "shortcuts", "applescript", "python", "microphone", "volumeUp", "volumeDown", "volumeMute"]
+    private let names = ["Switch Logitech device", "Open File", "Open URL", "Multi-action button", "Folder", "Home Assistant", "Apple Shortcuts", "AppleScript", "Python script", "Microphone mute", "Volume up", "Volume down", "Speaker mute"]
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -261,12 +261,8 @@ struct DeckSettingsView: View {
             case "python":
                 field("Interpreter absolute path (default /usr/bin/python3)", "interpreter", index)
                 field("Script absolute path", "path", index)
-            case "applescript", "camera":
+            case "applescript":
                 field("AppleScript to run", "script", index, multiline: true)
-                if button.wrappedValue.kind == "camera" {
-                    Text("Configure the target app’s camera command. macOS has no universal camera toggle.").font(.caption)
-                    field("State AppleScript (returns on or off; optional)", "stateScript", index, multiline: true)
-                }
             default: EmptyView()
             }
             if button.wrappedValue.kind != "folder" && button.wrappedValue.kind != "group" {

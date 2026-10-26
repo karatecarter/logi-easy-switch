@@ -88,9 +88,8 @@ The icon template must return an SF Symbol name (not an HA `mdi:` icon). Templat
 
 **Volume up/down/mute:** Controls the default output device. Volume changes in 6.25% increments. Readback supplies volume percentage and speaker icon. Audio devices must expose the relevant Core Audio controls; unsupported devices show errors rather than claiming success.
 
-**Camera:** Configure an app-specific AppleScript command to toggle the camera in the intended app. Optionally provide a read-only state AppleScript returning `on` or `off`. Without it, the button displays “App-specific” and a neutral camera icon. There is no universal implementation here for toggling cameras in arbitrary apps.
 
-Visible button presentations refresh in cycles with a two-second pause between cycles and refresh after actions. HA requests have a 15-second request timeout. State scripts run automatically while the launcher is visible; keep them read-only and fast. Processes have a 60-second limit, are terminated on timeout, and their output is capped to 64 KiB when read back for errors. Closing prevents a completed action from dismissing a newly opened session.
+Visible button presentations refresh in cycles with a two-second pause between cycles and refresh after actions. HA requests have a 15-second request timeout. Processes have a 60-second limit and a combined stdout/stderr limit of 64 KiB, enforced while output is collected in memory. Actions are terminated on timeout, cancellation, or output overflow; output is never spooled to a temporary file. Closing prevents a completed action from dismissing a newly opened session.
 
 ## Multi-action buttons and thermostat preset
 
@@ -188,7 +187,7 @@ Round one deliberately does not discover, install or execute Stream Deck plugins
 
 ## Validation
 
-`swift test` covers configuration round trips including future provider settings and distinct physical keys, dismissal overrides, literal subprocess argument handling, process failure propagation and rejected incomplete camera/HA actions. Existing security tests also run. Live Home Assistant calls, Automation consent, camera behavior, audio hardware support, focus restoration and visual layout require an interactive smoke test on the intended Mac.
+`swift test` covers configuration round trips including future provider settings and distinct physical keys, dismissal overrides, literal subprocess argument handling, process failure propagation and rejected removed camera actions and incomplete HA actions. Existing security tests also run. Live Home Assistant calls, Automation consent, audio hardware support, focus restoration and visual layout require an interactive smoke test on the intended Mac.
 
 
 ### Troubleshooting a group stuck waiting
