@@ -37,6 +37,41 @@ final class DeckWindowLayoutTests: XCTestCase {
         XCTAssertLessThan(small.frame.width, huge.frame.width)
         XCTAssertLessThan(small.frame.height, huge.frame.height)
     }
+    @MainActor func testMixedTilesHaveSameHeightAndWindowIncludesLastRow() throws {
+        let name = "DeckWindowLayoutTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = DeckStore(defaults: defaults)
+        let controller = DeckController(store: store)
+        var thermostat = DeckThermostatPreset.make()
+        let group = thermostat[0]
+        thermostat[0].settings["textReplacesName"] = "true"
+        var mainGroup = DeckButton(); mainGroup.kind = "group"
+        var main = DeckButton(); main.parentID = mainGroup.id
+        main.settings["iconSource"] = "application"
+        var control = DeckButton(); control.parentID = mainGroup.id
+        mainGroup.settings["mainActionID"] = main.id.uuidString
+        var folder = DeckButton(); folder.kind = "folder"
+        var folderControl = DeckButton(); folderControl.parentID = folder.id
+        folderControl.settings["folderControl"] = "true"
+        store.configuration.buttons = [DeckButton(), DeckButton(), DeckButton(), mainGroup, main, control, folder, folderControl] + thermostat
+        controller.presentations[group.id] = DeckPresentation(text: "Thermostat - 69\nHeat set to 68")
+        func measure() -> CGFloat {
+            let view = NSHostingView(rootView: DeckView(controller: controller, store: store, measuringColumns: 3).frame(width: 620).fixedSize(horizontal: false, vertical: true))
+            view.layoutSubtreeIfNeeded()
+            return view.fittingSize.height
+        }
+        XCTAssertEqual(controller.visibleButtons.count, 6)
+        XCTAssertEqual(measure(), DeckWindowLayout.contentHeight(buttonCount: 6, columns: 3), accuracy: 1)
+        store.configuration.buttons.append(DeckButton())
+        let expected = DeckWindowLayout.contentHeight(buttonCount: 7, columns: 3)
+        XCTAssertEqual(measure(), expected, accuracy: 1)
+        let fit = DeckWindowLayout.fit(in: CGRect(x: 0, y: 0, width: 1400, height: 900)) { columns, _ in
+            DeckWindowLayout.contentHeight(buttonCount: controller.visibleButtons.count, columns: columns)
+        }
+        XCTAssertEqual(fit.frame.height, expected)
+        XCTAssertEqual(fit.columns, 3)
+    }
     @MainActor func testMeasurementIncludesEveryGridRowWithoutScrolling() throws {
         let name = "DeckWindowLayoutTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))

@@ -2,17 +2,25 @@ import Foundation
 
 // Child actions are ordinary buttons owned by a group, preserving existing provider settings.
 enum DeckGroups {
+    static func mainAction(_ group: DeckButton, in configuration: DeckConfiguration) -> DeckButton? {
+        guard group.kind == "group", let id = group.settings["mainActionID"] else { return nil }
+        return configuration.buttons.first { $0.id.uuidString == id && $0.parentID == group.id && $0.kind != "group" }
+    }
+    static func isFolderControl(_ button: DeckButton, in configuration: DeckConfiguration) -> Bool {
+        button.settings["folderControl"] == "true" && button.kind != "group" &&
+        configuration.buttons.contains { $0.id == button.parentID && $0.kind == "folder" }
+    }
     static func controls(_ group: DeckButton, in configuration: DeckConfiguration) -> [DeckButton] {
-        configuration.buttons.filter { $0.parentID == group.id }
+        configuration.buttons.filter { $0.parentID == group.id && $0.id != mainAction(group, in: configuration)?.id && (group.kind == "group" || isFolderControl($0, in: configuration)) }
     }
     static func activationTargets(in folder: UUID?, configuration: DeckConfiguration) -> [DeckButton] {
-        configuration.buttons.filter { $0.parentID == folder }.flatMap { button in
-            button.kind == "group" ? controls(button, in: configuration) : [button]
+        configuration.buttons.filter { $0.parentID == folder && !isFolderControl($0, in: configuration) }.flatMap { button in
+            button.kind == "group" ? [mainAction(button, in: configuration)].compactMap { $0 } + controls(button, in: configuration) : [button] + (button.kind == "folder" ? controls(button, in: configuration) : [])
         }
     }
     static func containingFolder(of button: DeckButton, configuration: DeckConfiguration) -> UUID? {
         let owner = configuration.buttons.first { $0.id == button.parentID }
-        return owner?.kind == "group" ? owner?.parentID : button.parentID
+        return owner?.kind == "group" || isFolderControl(button, in: configuration) ? owner?.parentID : button.parentID
     }
     static func returnDestination(for button: DeckButton, configuration: DeckConfiguration) -> UUID? {
         let parent = containingFolder(of: button, configuration: configuration).flatMap { backDestination(from: $0, configuration: configuration) }
@@ -32,10 +40,13 @@ enum DeckGroups {
     }
     static func keyPeers(for button: DeckButton, configuration: DeckConfiguration) -> [DeckButton] {
         let owner = configuration.buttons.first { $0.id == button.parentID }
-        let folder = owner?.kind == "group" ? owner?.parentID : button.parentID
+        let folder = owner?.kind == "group" || isFolderControl(button, in: configuration) ? owner?.parentID : button.parentID
         return activationTargets(in: folder, configuration: configuration)
     }
     static func backDestination(from folder: UUID, configuration: DeckConfiguration) -> UUID? {
+        if let button = configuration.buttons.first(where: { $0.id == folder }), isFolderControl(button, in: configuration) {
+            return containingFolder(of: button, configuration: configuration)
+        }
         var parent = configuration.buttons.first { $0.id == folder }?.parentID
         var visited: Set<UUID> = [folder]
         while let id = parent, let owner = configuration.buttons.first(where: { $0.id == id }), owner.kind == "group" {

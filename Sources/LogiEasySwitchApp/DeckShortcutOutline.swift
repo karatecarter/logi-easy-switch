@@ -143,7 +143,8 @@ struct DeckShortcutOutline: NSViewRepresentable {
             cell.textField?.stringValue = button.name
             var configuration = DeckConfiguration(); configuration.buttons = owner.buttons
             let local = !DeckSyncScope.isShared(button, in: configuration)
-            cell.imageView?.image = DeckImageIcons.image(button) ?? NSImage(systemSymbolName: DeckImageIcons.symbol(button), accessibilityDescription: button.name)
+            let iconButton = DeckGroups.mainAction(button, in: configuration) ?? button
+            cell.imageView?.image = DeckImageIcons.image(iconButton) ?? NSImage(systemSymbolName: DeckImageIcons.symbol(iconButton), accessibilityDescription: button.name)
             if let badge = cell.subviews.first(where: { $0.identifier?.rawValue == "localOnlyBadge" }) {
                 badge.isHidden = !local
                 badge.constraints.first { $0.identifier == "localBadgeWidth" }?.constant = local ? 12 : 0

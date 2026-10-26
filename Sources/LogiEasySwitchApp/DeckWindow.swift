@@ -37,7 +37,7 @@ private final class DeckPanel: NSPanel {
     private var tickBatches: [UUID: TickBatch] = [:]
     private let tickDebouncer = DeckTickDebouncer()
     private weak var previousApp: NSRunningApplication?
-    var visibleButtons: [DeckButton] { store.configuration.buttons.filter { $0.parentID == folder } }
+    var visibleButtons: [DeckButton] { store.configuration.buttons.filter { $0.parentID == folder && !DeckGroups.isFolderControl($0, in: store.configuration) } }
     init(store: DeckStore, logi: DeckLogiService? = nil) {
         self.store = store
         providers = [BuiltinDeckProvider()] + (logi.map { [DeckLogiProvider(service: $0)] } ?? [])
@@ -64,7 +64,10 @@ private final class DeckPanel: NSPanel {
         navigationRevision = UUID()
         error = nil
         generation = UUID()
-        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+        // The first screen is the primary display; NSScreen.main follows the key window.
+        let screen = store.configuration.alwaysOnMainDisplay == true
+            ? NSScreen.screens.first
+            : NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         resizeToFit(animated: false, on: screen)
         NSApp.activate(ignoringOtherApps: true)
         panel?.ignoresMouseEvents = false
@@ -159,11 +162,8 @@ private final class DeckPanel: NSPanel {
     }
     func resizeToFit(animated: Bool, on screen: NSScreen? = nil) {
         guard let panel, let screen = screen ?? panel.screen ?? NSScreen.main else { return }
-        let layout = DeckWindowLayout.fit(in: screen.visibleFrame) { count, width in
-            let view = NSHostingView(rootView: DeckView(controller: self, store: store, measuringColumns: count)
-                .frame(width: width).fixedSize(horizontal: false, vertical: true))
-            view.layoutSubtreeIfNeeded()
-            return view.fittingSize.height
+        let layout = DeckWindowLayout.fit(in: screen.visibleFrame) { count, _ in
+            DeckWindowLayout.contentHeight(buttonCount: visibleButtons.count, columns: count)
         }
         if columns != layout.columns { columns = layout.columns }
         guard abs(panel.frame.width - layout.frame.width) > 0.5 || abs(panel.frame.height - layout.frame.height) > 0.5 ||
@@ -213,6 +213,10 @@ private final class DeckPanel: NSPanel {
         if store.configuration.openingDismissEnabled { scheduleDismiss(store.configuration.idleTimeout) }
     }
     func activate(_ button: DeckButton) {
+        if button.kind == "group" {
+            if let main = DeckGroups.mainAction(button, in: store.configuration) { activate(main) }
+            return
+        }
         if DeckTicks.sign(button) != nil {
             queueTicks(button)
             return
@@ -299,7 +303,8 @@ private final class DeckPanel: NSPanel {
     }
     private func refresh() async {
         let session = generation
-        for button in visibleButtons {
+        let mainActions = visibleButtons.compactMap { DeckGroups.mainAction($0, in: store.configuration) }
+        for button in visibleButtons + mainActions {
             guard !Task.isCancelled, generation == session else { return }
             guard let provider = providers.first(where: { $0.kinds.contains(button.kind) }) else { continue }
             do {
@@ -329,13 +334,14 @@ struct DeckView: View {
             removal: .move(edge: controller.navigatingBack ? .trailing : .leading).combined(with: .opacity))
     }
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: DeckWindowLayout.sectionSpacing) {
             HStack {
                 if controller.folder != nil { Button { controller.back() } label: { Image(systemName: "chevron.left") }.help("Back (← or Delete)") }
                 Text(store.configuration.buttons.first(where: { $0.id == controller.folder })?.name ?? "Shortcuts").font(.title2.bold())
                 Spacer()
                 Button { controller.hide() } label: { Image(systemName: "xmark") }.help("Close (Escape)")
             }
+            .frame(height: DeckWindowLayout.headerHeight)
             ZStack {
             if measuringColumns != nil {
                 iconGrid.fixedSize(horizontal: false, vertical: true)
@@ -355,18 +361,17 @@ struct DeckView: View {
             .frame(maxWidth: .infinity, maxHeight: measuringColumns == nil ? .infinity : nil)
             .clipped()
             statusFooter
-                .frame(height: 28)
+                .frame(height: DeckWindowLayout.footerHeight)
                 .frame(maxWidth: .infinity)
-            if let error = controller.error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
-        }.padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+        }.padding(DeckWindowLayout.padding).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
         .onChange(of: store.configuration) { _, _ in updateSize() }
-        .onChange(of: controller.presentations) { _, _ in updateSize() }
-        .onChange(of: controller.error) { _, _ in updateSize() }
     }
     private var statusFooter: some View {
         let updating = !controller.pendingTickCounts.isEmpty || controller.presentations.values.contains { $0.pendingSetpoint }
         return Group {
-            if let countdown = controller.countdown {
+            if let error = controller.error {
+                Text(error).font(.caption).foregroundStyle(.red).lineLimit(2).textSelection(.enabled).help(error)
+            } else if let countdown = controller.countdown {
                 DeckCountdownView(countdown: countdown, status: updating ? "Updating setpoint…" : nil)
             } else {
                 VStack(spacing: 5) {
@@ -384,70 +389,78 @@ struct DeckView: View {
         controller.resizeToFit(animated: true)
     }
     private var iconGrid: some View {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: columnCount), spacing: 12) {
-                    ForEach(controller.visibleButtons) { button in
-                        if button.kind == "group" {
-                            VStack(spacing: 12) {
-                                tileContent(button)
-                                let controls = DeckGroups.controls(button, in: store.configuration)
-                                if controls.isEmpty { Text("Add controls in settings").font(.caption).foregroundStyle(.secondary) }
-                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 45))], spacing: 6) {
-                                    ForEach(controls) { control in
-                                        Button { controller.activate(control) } label: {
-                                            VStack(spacing: 3) {
-                                                Text(control.name).font(.headline)
-                                                if let key = control.key { Text(key.compactDisplayLabel).font(.caption2.monospaced()).foregroundStyle(.secondary) }
-                                            }.frame(maxWidth: .infinity, minHeight: 32)
-                                        }.disabled(controller.running != nil && DeckTicks.sign(control) == nil)
-                                        .help(control.kind == "folder" ? "Open \(control.name)" : control.name)
-                                    }
-                                }
-                            }.padding(12).frame(maxWidth: .infinity).background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
-                        } else {
-                            Button { controller.activate(button) } label: {
-                                tileContent(button).frame(maxWidth: .infinity, minHeight: 110).padding(10)
-                            }.buttonStyle(.plain).background(.quaternary, in: RoundedRectangle(cornerRadius: 12)).disabled(controller.running != nil && DeckTicks.sign(button) == nil)
-                        }
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: DeckWindowLayout.gridSpacing), count: columnCount), spacing: DeckWindowLayout.gridSpacing) {
+            ForEach(controller.visibleButtons) { button in
+                let controls = DeckGroups.controls(button, in: store.configuration)
+                VStack(spacing: 8) {
+                    if button.kind != "group" || DeckGroups.mainAction(button, in: store.configuration) != nil {
+                        Button { controller.activate(button) } label: {
+                            tileContent(button).frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
+                        }.buttonStyle(.plain)
+                            .disabled(controller.running != nil && DeckTicks.sign(button) == nil)
+                    } else {
+                        tileContent(button).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    if !controls.isEmpty {
+                        HStack(spacing: 6) {
+                            ForEach(controls) { control in
+                                Button { controller.activate(control) } label: {
+                                    VStack(spacing: 3) {
+                                        Text(control.name).font(.headline).lineLimit(1)
+                                        if let key = control.key { Text(key.compactDisplayLabel).font(.caption2.monospaced()).lineLimit(1).foregroundStyle(.secondary) }
+                                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                                }.frame(maxWidth: .infinity).disabled(controller.running != nil && DeckTicks.sign(control) == nil)
+                                    .help(control.kind == "folder" ? "Open \(control.name)" : control.name)
+                            }
+                        }.frame(height: 40)
                     }
                 }
-
+                .padding(12)
+                .frame(maxWidth: .infinity)
+                .frame(height: DeckWindowLayout.tileHeight)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+                .clipped()
+            }
+        }.frame(minHeight: DeckWindowLayout.tileHeight, alignment: .top)
     }
     private func tileContent(_ button: DeckButton) -> some View {
         let presentation = controller.presentations[button.id]
-        let realIcon = ["image", "favicon", "application"].contains(button.settings["iconSource"] ?? "")
+        let iconButton = DeckGroups.mainAction(button, in: store.configuration) ?? button
+        let iconPresentation = controller.presentations[iconButton.id]
+        let isRunning = controller.running == iconButton.id
+        let realIcon = ["image", "favicon", "application"].contains(iconButton.settings["iconSource"] ?? "")
         let replaceName = button.settings["textReplacesName"] == "true" && !(presentation?.text ?? "").isEmpty
-        return Group {
+        return VStack(spacing: 4) {
             if realIcon {
-                VStack(spacing: 4) {
-                    GeometryReader { geometry in
-                        DeckButtonIcon(button: button, presentation: presentation, size: min(geometry.size.height, geometry.size.width))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                    if !replaceName { Text(button.name).font(.headline).lineLimit(2) }
-                    if controller.running == button.id || !(presentation?.text ?? "").isEmpty {
-                        Text(controller.running == button.id ? "Running…" : presentation?.text ?? "")
-                            .font(replaceName ? .headline : .caption).lineLimit(3)
-                    }
-                }
-                .multilineTextAlignment(.center)
-                .frame(height: 110)
-                .overlay(alignment: .topTrailing) {
-                    if button.kind != "group" {
-                        Text(button.key?.displayLabel ?? "").font(.caption.monospaced()).foregroundStyle(.secondary)
-                    }
+                GeometryReader { geometry in
+                    DeckButtonIcon(button: iconButton, presentation: iconPresentation, size: max(0, min(geometry.size.height, geometry.size.width)))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
-                VStack(spacing: 8) {
-                    if button.kind != "group" {
-                        HStack { Spacer(); Text(button.key?.displayLabel ?? "").font(.caption.monospaced()).foregroundStyle(.secondary) }
-                    }
-                    DeckButtonIcon(button: button, presentation: presentation)
-                    if !replaceName { Text(button.name).font(.headline).lineLimit(2) }
-                    Text(controller.running == button.id ? "Running…" : presentation?.text ?? " ")
-                        .font(replaceName ? .headline : .caption)
-                        .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-                }
+                Spacer(minLength: 0)
+                DeckButtonIcon(button: iconButton, presentation: iconPresentation)
+            }
+            if !replaceName {
+                Text(button.name).font(.headline).lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
+            }
+            if isRunning || !(presentation?.text ?? "").isEmpty {
+                Text(isRunning ? "Running…" : presentation?.text ?? "")
+                    .font(replaceName ? .headline : .caption).lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
+                    .layoutPriority(1)
+            }
+            if !realIcon { Spacer(minLength: 0) }
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .topTrailing) {
+            if button.kind != "group" || iconButton.id != button.id {
+                Text(iconButton.key?.displayLabel ?? "").font(.caption.monospaced()).lineLimit(1).minimumScaleFactor(0.8).foregroundStyle(.secondary)
             }
         }
+        .clipped()
     }
 }

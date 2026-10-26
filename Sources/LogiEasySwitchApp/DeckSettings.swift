@@ -36,6 +36,7 @@ struct DeckSettingsView: View {
     @State private var connectionStatus: String?
     @State private var connectionSucceeded = false
     @StateObject private var capture = DeckKeyCapture()
+    @StateObject private var settingsCapture = DeckKeyCapture()
     private let kinds = ["logi", "application", "url", "group", "folder", "homeassistant", "shortcuts", "applescript", "python", "microphone", "camera", "volumeUp", "volumeDown", "volumeMute"]
     private let names = ["Switch Logitech device", "Open File", "Open URL", "Multi-action button", "Folder", "Home Assistant", "Apple Shortcuts", "AppleScript", "Python script", "Microphone mute", "Camera (app-specific)", "Volume up", "Volume down", "Speaker mute"]
     var body: some View {
@@ -47,11 +48,24 @@ struct DeckSettingsView: View {
             }
             HStack {
                 Button(capture.recording ? "Press key…" : "Launcher hotkey: \(store.configuration.hotkey?.displayLabel ?? "None")") {
+                    settingsCapture.stop()
                     capture.begin(global: true) { store.configuration.hotkey = $0 }
                 }
                 Text("Modified key required. Delete clears, Escape cancels.").font(.caption).foregroundStyle(.secondary)
             }
+            HStack {
+                Button(settingsCapture.recording ? "Press key…" : "Shortcuts settings hotkey: \(store.configuration.settingsHotkey?.displayLabel ?? "None")") {
+                    capture.stop()
+                    settingsCapture.begin(global: true) { store.configuration.settingsHotkey = $0 }
+                }
+                Text("Modified key required. Delete clears, Escape cancels.").font(.caption).foregroundStyle(.secondary)
+            }
             if let error = store.hotkeyError { Text(error).font(.caption).foregroundStyle(.red) }
+            Toggle("Always show shortcuts on the main display", isOn: Binding(get: {
+                store.configuration.alwaysOnMainDisplay ?? false
+            }, set: { store.configuration.alwaysOnMainDisplay = $0 }))
+                .toggleStyle(.checkbox)
+                .help("When unchecked, shortcuts open on the display containing the pointer. This setting stays local to this Mac.")
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
                     Toggle("Dismiss", isOn: Binding(get: { store.configuration.openingDismissEnabled }, set: { enabled in
@@ -113,6 +127,11 @@ struct DeckSettingsView: View {
                         .disabled(sync.isReadOnly)
                         Button("Remove") { removeSelected() }.disabled(selected == nil || sync.isReadOnly)
                     }
+                    Button("Duplicate") {
+                        guard let selected, let copy = DeckShortcutTree.duplicating(selected, buttons: store.configuration.buttons) else { return }
+                        store.configuration.buttons = copy.buttons
+                        self.selected = copy.selection
+                    }.disabled(selected == nil || sync.isReadOnly)
                     HStack {
                         Button("Move up") { move(-1) }.disabled(selected == nil || sync.isReadOnly)
                         Button("Move down") { move(1) }.disabled(selected == nil || sync.isReadOnly)
@@ -140,7 +159,7 @@ struct DeckSettingsView: View {
         .disclosureGroupStyle(DeckDisclosureStyle())
         .textFieldStyle(.roundedBorder)
         .onAppear { token = DeckTokenStore.load() }
-        .onDisappear { capture.stop() }
+        .onDisappear { capture.stop(); settingsCapture.stop() }
         .onChange(of: store.configuration.homeAssistantURL) { _, _ in connectionStatus = nil }
         .onChange(of: token) { _, _ in connectionStatus = nil }
         .onChange(of: sync.isReadOnly) { _, _ in capture.stop() }
@@ -180,9 +199,17 @@ struct DeckSettingsView: View {
                 Text("Top level").tag(nil as UUID?)
                 ForEach(store.configuration.buttons.filter { ($0.kind == "folder" || ($0.kind == "group" && button.wrappedValue.kind != "group")) && !descendants(of: selected).contains($0.id) && $0.id != selected }) { folder in Text(folder.name).tag(Optional(folder.id)) }
             }.pickerStyle(.menu).fixedSize(horizontal: true, vertical: false)
+            if button.wrappedValue.kind != "group", store.configuration.buttons.contains(where: { $0.id == button.wrappedValue.parentID && $0.kind == "folder" }) {
+                Toggle("Show as action control on folder tile", isOn: Binding(get: {
+                    button.wrappedValue.settings["folderControl"] == "true"
+                }, set: { button.wrappedValue.settings["folderControl"] = $0 ? "true" : "false" }))
+                    .toggleStyle(.checkbox)
+                Text("Tile controls run from the folder’s parent screen instead of appearing inside the folder.").font(.caption).foregroundStyle(.secondary)
+            }
             if button.wrappedValue.kind != "group" {
                 Button("Button key: \(button.wrappedValue.key?.displayLabel ?? "None")") {
                     let id = button.wrappedValue.id
+                    settingsCapture.stop()
                     capture.begin(global: false) { key in
                         if let location = store.configuration.buttons.firstIndex(where: { $0.id == id }) { store.configuration.buttons[location].key = key }
                     }
@@ -190,11 +217,33 @@ struct DeckSettingsView: View {
                 if capture.recording { Text("Press a key (including numpad), Delete clears, Escape cancels.").font(.caption) }
                 if let key = button.wrappedValue.key, DeckGroups.keyPeers(for: button.wrappedValue, configuration: store.configuration).contains(where: { $0.id != button.wrappedValue.id && $0.key?.keyCode == key.keyCode && $0.key?.modifiers == key.modifiers }) { Text("Duplicate key in this folder; choose another key.").foregroundStyle(.red) }
             }
-            DeckIconOptions(button: button).id(button.wrappedValue.id)
+            if let main = DeckGroups.mainAction(button.wrappedValue, in: store.configuration) {
+                HStack {
+                    Text("Icon")
+                    DeckButtonIcon(button: main)
+                    Button("Edit main action icon…") { selected = main.id }
+                }
+            } else {
+                DeckIconOptions(button: button).id(button.wrappedValue.id)
+            }
             switch button.wrappedValue.kind {
             case "logi": DeckLogiEditor(button: button, service: logi)
             case "folder":
-                ForEach(store.configuration.buttons.filter { $0.parentID == button.wrappedValue.id }) { child in
+                let controls = DeckGroups.controls(button.wrappedValue, in: store.configuration)
+                Text("Folder tile actions").font(.headline)
+                ForEach(controls) { child in
+                    Button("Edit \(child.name)") { selected = child.id }
+                }
+                Button("Add action to folder tile") {
+                    var child = DeckButton()
+                    child.parentID = button.wrappedValue.id
+                    child.settings["folderControl"] = "true"
+                    child.dismiss = .never
+                    store.configuration.buttons.append(child)
+                    selected = child.id
+                }
+                Text("Shortcuts inside folder").font(.headline)
+                ForEach(store.configuration.buttons.filter { $0.parentID == button.wrappedValue.id && !DeckGroups.isFolderControl($0, in: store.configuration) }) { child in
                     Button("Edit \(child.name)") { selected = child.id }
                 }
                 Button("Add shortcut to this folder") {

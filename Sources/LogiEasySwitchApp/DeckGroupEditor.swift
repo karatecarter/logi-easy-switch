@@ -27,6 +27,25 @@ struct DeckGroupEditor: View {
                 Text("+/− taps accumulate for one second after the last tap, then send increment: ticks or −ticks. Choosing a thermostat sets the live text and targets for Cool, Heat, Auto and Off. Edit the Mode folder’s controls if your thermostat uses different modes.").font(.caption).foregroundStyle(.secondary)
             }
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
+            Text("Main action").font(.headline)
+            Picker("Click tile to run", selection: setting("mainActionID")) {
+                Text("None").tag("")
+                ForEach(store.configuration.buttons.filter { $0.parentID == groupID && $0.kind != "group" }) { action in
+                    Text(action.name).tag(action.id.uuidString)
+                }
+            }.pickerStyle(.menu)
+            if let group, let main = DeckGroups.mainAction(group, in: store.configuration) {
+                Button("Edit main action: \(main.name)") { selected = main.id }
+                Text("The tile uses this action’s icon. Its key also runs the main action.").font(.caption).foregroundStyle(.secondary)
+            }
+            Button("Add main action") {
+                var action = DeckButton()
+                action.name = "Main action"
+                action.parentID = groupID
+                store.configuration.buttons.append(action)
+                set("mainActionID", action.id.uuidString)
+                selected = action.id
+            }
             Text("Controls").font(.headline)
             if let group {
                 ForEach(DeckGroups.controls(group, in: store.configuration)) { control in

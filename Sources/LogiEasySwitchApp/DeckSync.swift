@@ -8,7 +8,7 @@ struct DeckSharedConfiguration: Codable, Equatable {
     var dismissAfterOpening: Bool?
 
     init(_ configuration: DeckConfiguration) {
-        let migrated = configuration.migratingThermostatTicks()
+        let migrated = configuration.migratingThermostatTicks().repairingEmptyApplicationURLs()
         buttons = migrated.buttons.filter { DeckSyncScope.isShared($0, in: migrated) }.map { button in
             var shared = button
             shared.settings.removeValue(forKey: "path")
@@ -50,7 +50,7 @@ struct DeckSharedConfiguration: Codable, Equatable {
         result.actionDelay = actionDelay
         result.idleTimeout = idleTimeout
         result.dismissAfterOpening = dismissAfterOpening
-        return result.migratingThermostatTicks()
+        return result.migratingThermostatTicks().repairingEmptyApplicationURLs()
     }
     func validate() throws {
         guard buttons.count <= 500, Set(buttons.map(\.id)).count == buttons.count,

@@ -494,12 +494,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             visibleHotkeys = visibleHotkeys.filter { $0.value.keyCode != shortcut.keyCode || $0.value.modifiers != shortcut.modifiers }
             visibleHotkeys["deck"] = shortcut
         }
+        let settingsShortcut = deckStore.configuration.settingsHotkey
+        let duplicateDeckHotkeys = settingsShortcut != nil && settingsShortcut?.keyCode == deckStore.configuration.hotkey?.keyCode && settingsShortcut?.modifiers == deckStore.configuration.hotkey?.modifiers
+        if let shortcut = settingsShortcut, !duplicateDeckHotkeys {
+            visibleHotkeys = visibleHotkeys.filter { $0.value.keyCode != shortcut.keyCode || $0.value.modifiers != shortcut.modifiers }
+            visibleHotkeys["deckSettings"] = shortcut
+        }
         let failures = hotkeys.replace(with: visibleHotkeys) { [weak self] target in
             Task { @MainActor in
-                if target == "deck" { self?.deck.toggle() } else { self?.runHotkey(target) }
+                if target == "deck" { self?.deck.toggle() }
+                else if target == "deckSettings" { self?.openDeckSettings() }
+                else { self?.runHotkey(target) }
             }
         }
-        deckStore.hotkeyError = failures.contains("deck") ? "The launcher hotkey is unavailable. Choose a different key combination." : nil
+        var errors: [String] = []
+        if failures.contains("deck") { errors.append("The launcher hotkey is unavailable. Choose a different key combination.") }
+        if failures.contains("deckSettings") { errors.append("The settings hotkey is unavailable. Choose a different key combination.") }
+        if duplicateDeckHotkeys { errors.append("Launcher and settings hotkeys must use different key combinations.") }
+        deckStore.hotkeyError = errors.isEmpty ? nil : errors.joined(separator: "\n")
     }
 
     private func configureMQTT() {
@@ -559,6 +571,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             window.title = "Shortcuts Settings"
             window.styleMask = [.titled, .closable, .resizable]
             window.isReleasedWhenClosed = false
+            let availableFrame = (window.screen ?? NSScreen.main)?.visibleFrame
+            let availableContentHeight = availableFrame.map {
+                window.contentRect(forFrameRect: $0.insetBy(dx: 16, dy: 16)).height
+            } ?? 1060
+            window.setContentSize(NSSize(width: 800, height: min(1060, availableContentHeight)))
             window.center()
             window.makeKeyAndOrderFront(nil)
             deckSettingsWindow = window

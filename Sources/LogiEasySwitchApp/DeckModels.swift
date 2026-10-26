@@ -36,6 +36,8 @@ enum DeckDismiss: String, Codable, CaseIterable {
 
 struct DeckConfiguration: Codable, Equatable {
     var hotkey: Shortcut?
+    var settingsHotkey: Shortcut?
+    var alwaysOnMainDisplay: Bool?
     var dismissAfterAction = true
     var actionDelay: Double = 0
     var idleTimeout: Double = 0
@@ -57,7 +59,7 @@ struct DeckConfiguration: Codable, Equatable {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         let saved = (try? JSONDecoder().decode(DeckConfiguration.self, from: defaults.data(forKey: "shortcutDeck.v1") ?? Data())) ?? DeckConfiguration()
-        configuration = saved.migratingThermostatTicks()
+        configuration = saved.migratingThermostatTicks().repairingEmptyApplicationURLs()
         if configuration != saved { save() }
     }
     private func save() {
@@ -115,4 +117,19 @@ protocol DeckActionProvider {
     var kinds: [String] { get }
     func execute(_ button: DeckButton, configuration: DeckConfiguration) async throws
     func presentation(_ button: DeckButton, configuration: DeckConfiguration) async throws -> DeckPresentation
+}
+
+// Older type changes could leave an application saved as an empty URL action.
+extension DeckConfiguration {
+    func repairingEmptyApplicationURLs() -> DeckConfiguration {
+        var result = self
+        for index in result.buttons.indices {
+            let button = result.buttons[index]
+            if button.kind == "url", (button.settings["url"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               !(button.settings["applicationBundleID"] ?? "").isEmpty {
+                result.buttons[index].kind = "application"
+            }
+        }
+        return result
+    }
 }
