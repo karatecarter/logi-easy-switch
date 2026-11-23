@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var cachedHosts: [String: [LogiHost]] = [:]
     private var deviceLoadError: String?
     private let defaults = DeviceDefaults()
+    private let destinationActionRunner = DestinationActionRunner()
     private let hotkeys = HotkeyManager()
     private let deckStore = DeckStore()
     private let deckLogi = DeckLogiService()
@@ -43,14 +44,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         mqtt.onDeviceTargetRequested = { [weak self] request in
             guard let self else { return }
             let machine = self.defaults.machineName(matchingDisplayName: request.target) ?? request.target
-            self.loadDevices(requestedTarget: machine, requestedScope: request.devices)
+            self.loadDevices(requestedTarget: machine, requestedScope: request.devices, networkRequest: true)
         }
         mqtt.onTargetRequested = { [weak self] target in
             guard let self else { return }
             let machine = self.defaults.machineName(matchingDisplayName: target) ?? target
             // A split pair has no single owner. Probe this Mac on every
             // request so whichever selected devices are here can participate.
-            self.loadDevices(requestedTarget: machine)
+            self.loadDevices(requestedTarget: machine, networkRequest: true)
         }
         mqtt.onStateChanged = { [weak self] in
             guard let self else { return }
@@ -125,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         loadDevices()
     }
 
-    private func loadDevices(requestedTarget: String? = nil, requestedScope: DeckLogiScope = .both) {
+    private func loadDevices(requestedTarget: String? = nil, requestedScope: DeckLogiScope = .both, networkRequest: Bool = false) {
         Task.detached { [weak self] in
             guard let self else { return }
             do {
@@ -150,7 +151,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     }
                     if let requestedTarget {
                         let selected = self.defaults.selectedDevices(from: devices).filter { requestedScope.includes($0) }
-                        if !selected.isEmpty { self.switchDevices(selected, targetName: requestedTarget, scope: requestedScope) }
+                        if !selected.isEmpty {
+                            self.switchDevices(selected, targetName: requestedTarget, scope: requestedScope, networkRequest: networkRequest)
+                        } else if networkRequest {
+                            Task { do { try await self.runDestinationAction(for: requestedTarget) }
+                                   catch { self.showError(error) } }
+                        }
                     }
                     if self.isMenuOpen {
                         self.updateVisibleMenuState()
@@ -198,6 +204,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func rebuildMenu() {
         menu.removeAllItems()
+        if let message = defaults.destinationActionError {
+            let item = menu.addItem(withTitle: message, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(.separator())
+        }
         let selected = defaults.selectedDevices(from: cachedDevices)
         if let deviceLoadError, cachedDevices.isEmpty {
             if defaults.mqtt.isUsable, defaults.knownMachineNames.contains(where: defaults.isMachineVisible) {
@@ -313,7 +324,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Task.detached { [weak self] in
             guard let self else { return }
             do {
-                try LogiAgent().switchDevice(target.device, to: target.host)
+                try await DestinationSwitchFlow.perform(pendingCount: target.host.connected ? 0 : 1, switchDevices: {
+                    if !target.host.connected { try LogiAgent().switchDevice(target.device, to: target.host) }
+                }, followUp: { try await self.runDestinationAction(for: target.host.name) })
                 await MainActor.run { self.refreshMenu() }
             } catch {
                 await MainActor.run { self.showError(error) }
@@ -321,7 +334,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func switchDevices(_ devices: [LogiDevice], targetName: String, scope: DeckLogiScope = .both) {
+    private func switchDevices(_ devices: [LogiDevice], targetName: String, scope: DeckLogiScope = .both, networkRequest: Bool = false) {
         let knownHosts = cachedHosts
         Task.detached { [weak self] in
             guard let self else { return }
@@ -348,9 +361,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     else { self.mqtt.clearLocalOwnership() }
                     self.refreshMenu()
                 }
+                try await DestinationSwitchFlow.perform(pendingCount: pending.count, networkRequest: networkRequest,
+                    switchDevices: {}, followUp: { try await self.runDestinationAction(for: targetName) })
             } catch {
                 await MainActor.run { self.showError(error) }
             }
+        }
+    }
+
+    private func runDestinationAction(for target: String) async throws {
+        guard let machine = defaults.machineName(matchingDisplayName: target), defaults.isMachineVisible(machine),
+              let action = defaults.destinationActions[machine], !action.isEmpty else { return }
+        defaults.destinationActionError = nil
+        do { try await destinationActionRunner.run(action) }
+        catch {
+            let message = "After-switch action for \(defaults.displayName(for: machine)) failed. The device-switch request was already processed.\n" + error.localizedDescription
+            defaults.destinationActionError = message
+            throw DeckError.message(message)
         }
     }
 
@@ -366,7 +393,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let mouseID = defaults.mouseID, keyboardID = defaults.keyboardID
         let scope = request.devices
-        try await Task.detached {
+        let pendingCount = try await Task.detached {
             let agent = LogiAgent()
             let devices = try agent.devices()
             let expected = scope == .both ? [mouseID, keyboardID] : scope == .mouse ? [mouseID] : [keyboardID]
@@ -382,8 +409,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             targets.sort { $0.0.type == "MOUSE" && $1.0.type == "KEYBOARD" }
             try agent.switchDevices(targets)
+            return targets.count
         }.value
         loadDevices()
+        try await DestinationSwitchFlow.perform(pendingCount: pendingCount, switchDevices: {},
+            followUp: { try await self.runDestinationAction(for: target) })
     }
 
     @objc private func refreshMenuFromAction() { refreshMenu() }
@@ -554,7 +584,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 guard let self else { return }
                 do {
                     guard let host = try LogiAgent().hosts(for: device).first(where: { $0.index == channel }) else { return }
-                    try LogiAgent().switchDevice(device, to: host)
+                    try await DestinationSwitchFlow.perform(pendingCount: host.connected ? 0 : 1, switchDevices: {
+                        if !host.connected { try LogiAgent().switchDevice(device, to: host) }
+                    }, followUp: { try await self.runDestinationAction(for: host.name) })
                     await MainActor.run { self.refreshMenu() }
                 } catch { await MainActor.run { self.showError(error) } }
             }

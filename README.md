@@ -49,6 +49,29 @@ The app keeps its original bundle identifier, Keychain services, MQTT topics,
 and configuration paths so existing settings and integrations remain compatible.
 Swift source modules and the repository directory retain their original names.
 
+## After-switch actions
+
+Under **Settings → After switching**, each remembered, visible destination can
+optionally run a shell command or open a chosen application **on this Mac**.
+All actions default to Nothing, with blank command and application fields.
+Commands support quoted paths and shell syntax, run through `/bin/zsh -c`,
+and have a 30-second execution limit. Use absolute paths; commands inherit the
+app's environment rather than an interactive shell environment.
+
+Actions run once after a successful switch, including pair, per-device, hotkey,
+and shortcut-deck switching. Selecting an already-connected local target does
+nothing. For an accepted MQTT destination request, the locally configured action
+also runs when this Mac has no selected peripherals to move, allowing a local
+monitor to follow a switch initiated on another computer. Retained MQTT commands
+and current-target state updates do not trigger actions. A device discovery or
+local switching failure does not run a follow-up. Action failures are reported
+without retrying or undoing the device switch; multiple actions are serialized.
+
+Actions are stored only in this Mac's preferences (`destinationActions`), keyed
+by the underlying machine name rather than its alias. They are not included in
+shortcut sync or MQTT payloads. Forgetting a machine removes its action.
+Changing an alias preserves it. An empty command or application path does nothing.
+
 ## Shortcut launcher
 
 Use **Shortcuts Settings…** in the menu bar to configure a virtual shortcut deck,

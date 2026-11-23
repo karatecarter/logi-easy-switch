@@ -7,12 +7,21 @@ import Darwin
 enum DeckProcessRunner {
     static let maximumOutputBytes = 65_536
 
+    // Synchronous cleanup is bounded and runs only inside the detached worker's
+    // defer; using a callback avoids Foundation's thread-affine run-loop wait.
+    private static func finishTermination(_ signal: DispatchSemaphore) {
+        _ = signal.wait(timeout: .now() + 2)
+    }
+
     static func run(_ executable: String, _ arguments: [String], timeout: Duration = .seconds(60)) async throws -> String {
         let work = Task.detached {
             let pipe = Pipe()
             let reader = pipe.fileHandleForReading
             let writer = pipe.fileHandleForWriting
             let child = Process()
+            let exited = DispatchSemaphore(value: 0)
+            child.terminationHandler = { _ in exited.signal() }
+            var launched = false
             child.executableURL = URL(fileURLWithPath: executable)
             child.arguments = arguments
             child.standardOutput = writer
@@ -26,8 +35,11 @@ enum DeckProcessRunner {
                     // child ignores SIGTERM, including on cancellation/overflow.
                     usleep(250_000)
                     if child.isRunning { kill(child.processIdentifier, SIGKILL) }
-                    child.waitUntilExit()
                 }
+                // Swift tasks can resume on a different worker thread after an
+                // await. Foundation's waitUntilExit pumps a thread-local run loop
+                // and can hang here; wait for its termination callback instead.
+                if launched { finishTermination(exited) }
             }
             let descriptor = reader.fileDescriptor
             let flags = fcntl(descriptor, F_GETFL)
@@ -36,6 +48,7 @@ enum DeckProcessRunner {
             }
             try Task.checkCancellation()
             try child.run()
+            launched = true
             try writer.close() // Only the child should hold the pipe open.
             let deadline = ContinuousClock.now.advanced(by: timeout)
             var output = Data()

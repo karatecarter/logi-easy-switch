@@ -10,6 +10,8 @@ final class DeviceDefaults: ObservableObject {
     @Published var removedMachineNames: Set<String>
     @Published var mqtt: MQTTConfiguration
     @Published var usbTrigger: USBTriggerConfiguration
+    @Published var destinationActions: [String: DestinationSwitchAction]
+    @Published var destinationActionError: String?
     @Published private(set) var knownMachineNames: [String]
 
     private let mouseKey = "defaultMouseID"
@@ -30,6 +32,7 @@ final class DeviceDefaults: ObservableObject {
         removedMachineNames = Set(UserDefaults.standard.stringArray(forKey: "removedMachineNames") ?? [])
         mqtt = (try? JSONDecoder().decode(MQTTConfiguration.self, from: UserDefaults.standard.data(forKey: "mqttConfiguration") ?? Data())) ?? MQTTConfiguration()
         usbTrigger = (try? JSONDecoder().decode(USBTriggerConfiguration.self, from: UserDefaults.standard.data(forKey: "usbTriggerConfiguration") ?? Data())) ?? USBTriggerConfiguration()
+        destinationActions = (try? JSONDecoder().decode([String: DestinationSwitchAction].self, from: UserDefaults.standard.data(forKey: "destinationActions") ?? Data())) ?? [:]
         knownMachineNames = UserDefaults.standard.stringArray(forKey: "knownMachineNames") ?? []
     }
 
@@ -79,6 +82,7 @@ final class DeviceDefaults: ObservableObject {
         UserDefaults.standard.set(try? JSONEncoder().encode(mqtt), forKey: "mqttConfiguration")
         UserDefaults.standard.set(try? JSONEncoder().encode(usbTrigger), forKey: "usbTriggerConfiguration")
         UserDefaults.standard.set(knownMachineNames, forKey: "knownMachineNames")
+        UserDefaults.standard.set(try? JSONEncoder().encode(destinationActions), forKey: "destinationActions")
     }
 
     func displayName(for machine: String) -> String {
@@ -104,6 +108,7 @@ final class DeviceDefaults: ObservableObject {
         hiddenMachineNames.remove(machine)
         knownMachineNames.removeAll { $0 == machine }
         aliases.removeValue(forKey: machine)
+        destinationActions.removeValue(forKey: machine)
         hotkeys.removeValue(forKey: "default:\(machine)")
         save()
     }
@@ -312,6 +317,23 @@ struct SettingsView: View {
                 }
             }
 
+            Divider()
+
+            Text("After switching")
+                .font(.headline)
+            Text("Optionally run a command or open an app on this Mac after switching to a destination. Blank settings do nothing. These actions stay local to this Mac.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let error = defaults.destinationActionError {
+                Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+            }
+            ForEach(machineNames.filter { defaults.isMachineVisible($0) }, id: \.self) { machine in
+                DestinationActionEditor(title: defaults.displayName(for: machine), action: destinationActionBinding(for: machine))
+            }
+            Text("Commands run in /bin/zsh with a 30-second limit. Use absolute paths. MQTT requests also run the action here when the devices are connected to another computer.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             Text("Hotkeys")
                 .font(.headline)
 
@@ -399,6 +421,17 @@ struct SettingsView: View {
         defaults.hotkeys = workingHotkeys
         defaults.save()
         didSave()
+    }
+
+    private func destinationActionBinding(for machine: String) -> Binding<DestinationSwitchAction> {
+        Binding(
+            get: { defaults.destinationActions[machine] ?? DestinationSwitchAction() },
+            set: { action in
+                if action.kind == .none { defaults.destinationActions.removeValue(forKey: machine) }
+                else { defaults.destinationActions[machine] = action }
+                defaults.save()
+            }
+        )
     }
 
     private func aliasBinding(for machine: String) -> Binding<String> {
